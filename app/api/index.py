@@ -25,6 +25,10 @@ PUBLIC_DIR = ROOT_DIR / "public"
 CONFIG_FILE = ROOT_DIR / "config.json"  # local-only (gitignored)
 
 app = Flask(__name__)
+
+# Serve the single-page UI from /public (static assets + index.html fallback)
+STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public"))
+
 CORS(app)
 
 
@@ -375,3 +379,19 @@ Write the full letter now. Do not include any preamble or explanation — just t
         return jsonify({"error": "Invalid API key. Please check ANTHROPIC_API_KEY."}), 401
     except Exception as e:
         return jsonify({"error": f"Letter generation failed: {str(e)}"}), 500
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve the SPA and static assets.
+
+    Any unknown path falls back to index.html so client-side routing works.
+    """
+    # Let API routes (like /status, /api/*) match first
+    full_path = os.path.join(STATIC_DIR, path)
+    if path and os.path.isfile(full_path):
+        return send_from_directory(STATIC_DIR, path)
+    return send_from_directory(STATIC_DIR, 'index.html')
+
+
