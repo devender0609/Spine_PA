@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpinePA Agent — Prior Authorization Automation</title>
+<style>
+  :root {
+    --navy: #1B3A6B; --teal: #0E7C7B; --teal-light: #E6F4F4;
+    --red: #C0392B; --green: #27AE60; --amber: #E67E22;
+    --bg: #F0F4F8; --card: #FFFFFF; --border: #D9E2EC;
+    --text: #1A202C; --muted: #64748B; --sidebar: #1B3A6B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 240px; background: var(--sidebar); color: #fff; display: flex; flex-direction: column; min-height: 100vh; flex-shrink: 0; }
+  .sidebar-logo { padding: 24px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-logo h1 { font-size: 18px; font-weight: 700; color: #fff; }
+  .sidebar-logo p { font-size: 11px; color: #A8C8E8; margin-top: 3px; }
+  .sidebar-badge { display: inline-block; background: var(--teal); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-top: 6px; }
+  .nav-section { padding: 12px 0; }
+  .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #7FA8C8; padding: 4px 20px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: 13px; color: #C8DFF0; transition: all 0.15s; border-left: 3px solid transparent; }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .nav-item.active { background: rgba(14,124,123,0.25); color: #fff; border-left-color: var(--teal); }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+  .nav-badge { margin-left: auto; background: var(--teal); color: #fff; font-size: 10px; padding: 1px 7px; border-radius: 10px; }
+  .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #7FA8C8; }
+  .demo-chip { background: var(--amber); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 4px; }
+  .ai-chip { background: var(--green); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 4px; }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { background: #fff; border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+  .topbar h2 { font-size: 18px; font-weight: 600; color: var(--navy); }
+  .topbar-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-primary { background: var(--teal); color: #fff; }
+  .btn-primary:hover { background: #0a6b6a; }
+  .btn-secondary { background: var(--bg); color: var(--navy); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-outline { background: transparent; color: var(--teal); border: 1px solid var(--teal); }
+  .btn-outline:hover { background: var(--teal-light); }
+  .btn-danger { background: var(--red); color: #fff; }
+
+  .content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+
+  /* ── Views ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Stats strip ── */
+  .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: #fff; border-radius: 10px; padding: 18px 20px; border: 1px solid var(--border); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--navy); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.amber .stat-value { color: var(--amber); }
+  .stat-card.red .stat-value { color: var(--red); }
+
+  /* ── Card ── */
+  .card { background: #fff; border-radius: 10px; border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card-title .icon { color: var(--teal); }
+
+  /* ── Form ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .form-full { grid-column: 1 / -1; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field select, .field textarea { border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; font-size: 13px; font-family: inherit; color: var(--text); background: #fff; transition: border 0.15s; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14,124,123,0.12); }
+  .field textarea { resize: vertical; min-height: 100px; }
+
+  /* ── PA Queue ── */
+  .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .queue-table th { text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 2px solid var(--border); background: var(--bg); }
+  .queue-table td { padding: 13px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .queue-table tr:hover td { background: #F8FAFC; }
+  .queue-table tr:last-child td { border-bottom: none; }
+  .status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .status-pill.pending { background: #FFF3E0; color: #E67E22; }
+  .status-pill.approved { background: #E8F5E9; color: #27AE60; }
+  .status-pill.denied { background: #FFEBEE; color: #C0392B; }
+  .status-pill.submitted { background: #E3F2FD; color: #1565C0; }
+  .status-pill.draft { background: #F3E5F5; color: #6A1B9A; }
+
+  /* ── Steps ── */
+  .steps { display: flex; gap: 0; margin-bottom: 28px; }
+  .step { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; }
+  .step:not(:last-child)::after { content: ''; position: absolute; top: 16px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+  .step.done:not(:last-child)::after { background: var(--teal); }
+  .step-dot { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; z-index: 1; background: var(--border); color: var(--muted); }
+  .step.done .step-dot { background: var(--teal); color: #fff; }
+  .step.active .step-dot { background: var(--navy); color: #fff; box-shadow: 0 0 0 4px rgba(27,58,107,0.15); }
+  .step-label { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; max-width: 80px; }
+  .step.active .step-label { color: var(--navy); font-weight: 600; }
+  .step.done .step-label { color: var(--teal); }
+
+  /* ── Criteria checker ── */
+  .criteria-list { display: flex; flex-direction: column; gap: 8px; }
+  .criteria-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); }
+  .criteria-item.met { background: #F0FBF0; border-color: #A8DBA8; }
+  .criteria-item.missing { background: #FFF8F0; border-color: #F5C07A; }
+  .criteria-item.unmet { background: #FFF0F0; border-color: #F5A0A0; }
+  .criteria-icon { font-size: 18px; margin-top: 1px; flex-shrink: 0; }
+  .criteria-text { flex: 1; }
+  .criteria-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .criteria-note { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Letter ── */
+  .letter-box { background: #FAFBFC; border: 1px solid var(--border); border-radius: 8px; padding: 28px 32px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; font-family: 'Georgia', serif; color: #2D3748; max-height: 520px; overflow-y: auto; }
+
+  /* ── Alert ── */
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+  .alert.info { background: #E3F2FD; border: 1px solid #90CAF9; color: #1565C0; }
+  .alert.success { background: #E8F5E9; border: 1px solid #A5D6A7; color: #2E7D32; }
+  .alert.warning { background: #FFF8E1; border: 1px solid #FFE082; color: #E65100; }
+
+  /* ── Action row ── */
+  .action-row { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+  .action-row.right { justify-content: flex-end; }
+
+  /* ── Loading ── */
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(14,124,123,0.2); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .processing-box { text-align: center; padding: 40px; }
+  .processing-box .big-spinner { width: 48px; height: 48px; border-width: 4px; margin: 0 auto 16px; }
+  .processing-step { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+  /* ── Dashboard queue preview ── */
+  .dash-queue { margin-top: 4px; }
+  .dash-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .dash-row:last-child { border-bottom: none; }
+  .dash-name { font-weight: 600; color: var(--navy); }
+  .dash-proc { color: var(--muted); font-size: 12px; }
+
+  /* ── Responsive ── */
+  @media(max-width: 768px) {
+    .sidebar { display: none; }
+    .stats-strip { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid.three { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <h1>🦴 SpinePA Agent</h1>
+    <p>Prior Authorization Automation</p>
+    <span class="sidebar-badge">DEMO MODE</span>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item active" onclick="showView('dashboard')"><span class="icon">📊</span> Dashboard</div>
+    <div class="nav-item" onclick="showView('new-pa')"><span class="icon">➕</span> New PA Request</div>
+    <div class="nav-item" onclick="showView('queue')"><span class="icon">📋</span> PA Queue <span class="nav-badge" id="queue-badge">3</span></div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Reference</div>
+    <div class="nav-item" onclick="showView('criteria')"><span class="icon">📘</span> Payer Criteria</div>
+    <div class="nav-item" onclick="showView('settings')"><span class="icon">⚙️</span> Settings</div>
+  </div>
+  <div class="sidebar-footer">
+    <div>Spine Clinic, Athenahealth</div>
+    <span id="mode-chip" class="demo-chip">⚡ Demo Mode</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ MAIN ═══════════════════════════════════ -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-sub" id="topbar-sub">AI-powered prior authorization for spine care</div>
+      <h2 id="topbar-title">Dashboard</h2>
+    </div>
+    <button class="btn btn-primary" onclick="showView('new-pa')">➕ New PA Request</button>
+  </div>
+
+  <div class="content">
+
+    <!-- ───── DASHBOARD ───── -->
+    <div class="view active" id="view-dashboard">
+      <div class="stats-strip">
+        <div class="stat-card"><div class="stat-label">PAs This Month</div><div class="stat-value">47</div><div class="stat-sub">↑ 12% vs last month</div></div>
+        <div class="stat-card green"><div class="stat-label">Approval Rate</div><div class="stat-value">89%</div><div class="stat-sub">↑ from 72% (manual)</div></div>
+        <div class="stat-card amber"><div class="stat-label">Pending Review</div><div class="stat-value" id="pending-count">3</div><div class="stat-sub">Awaiting staff approval</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Processing Time</div><div class="stat-value">14m</div><div class="stat-sub">↓ from 2.8 hrs (manual)</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+          <div class="card-title"><span class="icon">⏳</span> Pending Review</div>
+          <div class="dash-queue" id="dashboard-queue">
+            <div class="dash-row"><div><div class="dash-name">James Thornton</div><div class="dash-proc">Lumbar Fusion (CPT 22612) · Aetna</div></div><span class="status-pill draft">Draft Ready</span></div>
+            <div class="dash-row"><div><div class="dash-name">Maria Santos</div><div class="dash-proc">Lumbar MRI (CPT 72148) · BCBS</div></div><span class="status-pill draft">Draft Ready</span></div>
+            <div class="dash-row"><div><div class="dash-name">Robert Kim</div><div class="dash-proc">ESI (CPT 62323) · United</div></div><span class="status-pill submitted">Submitted</span></div>
+          </div>
+          <div class="action-row" style="margin-top:14px;">
+            <button class="btn btn-outline" onclick="showView('queue')">View Full Queue →</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📈</span> PA Outcomes (30 days)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
+            <div style="background:#E8F5E9;border-radius:8px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#27AE60;">38</div><div style="font-size:11px;color:#555;margin-top:3px;">Approved</div></div>
+            <div style="background:#FFEBEE;border-radius:8px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#C0392B;">5</div><div style="font-size:11px;color:#555;margin-top:3px;">Denied</div></div>
+            <div style="background:#FFF3E0;border-radius:8px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#E67E22;">3</div><div style="font-size:11px;color:#555;margin-top:3px;">Pending</div></div>
+            <div style="background:#E3F2FD;border-radius:8px;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#1565C0;">4</div><div style="font-size:11px;color:#555;margin-top:3px;">Appealing</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">💡</span> How to Use This Agent</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+          <div style="background:var(--bg);border-radius:8px;padding:14px;text-align:center;"><div style="font-size:28px;margin-bottom:8px;">1️⃣</div><div style="font-size:13px;font-weight:600;color:var(--navy);">Enter Patient Info</div><div style="font-size:12px;color:var(--muted);margin-top:4px;">Fill in the patient details and procedure</div></div>
+          <div style="background:var(--bg);border-radius:8px;padding:14px;text-align:center;"><div style="font-size:28px;margin-bottom:8px;">2️⃣</div><div style="font-size:13px;font-weight:600;color:var(--navy);">Paste Clinical Notes</div><div style="font-size:12px;color:var(--muted);margin-top:4px;">Copy from Athenahealth or type a summary</div></div>
+          <div style="background:var(--bg);border-radius:8px;padding:14px;text-align:center;"><div style="font-size:28px;margin-bottom:8px;">3️⃣</div><div style="font-size:13px;font-weight:600;color:var(--navy);">Agent Analyzes</div><div style="font-size:12px;color:var(--muted);margin-top:4px;">AI checks criteria &amp; drafts the letter</div></div>
+          <div style="background:var(--bg);border-radius:8px;padding:14px;text-align:center;"><div style="font-size:28px;margin-bottom:8px;">4️⃣</div><div style="font-size:13px;font-weight:600;color:var(--navy);">Review &amp; Submit</div><div style="font-size:12px;color:var(--muted);margin-top:4px;">Approve the letter and submit to payer</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───── NEW PA REQUEST ───── -->
+    <div class="view" id="view-new-pa">
+
+      <!-- STEP 1: FORM -->
+      <div id="step-form">
+        <div class="steps">
+          <div class="step active"><div class="step-dot">1</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step"><div class="step-dot">2</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step"><div class="step-dot">3</div><div class="step-label">AI Analysis</div></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">👤</span> Patient Information</div>
+          <div class="form-grid three">
+            <div class="field"><label>Patient First Name</label><input id="pt-fname" type="text" placeholder="e.g. John" value=""></div>
+            <div class="field"><label>Patient Last Name</label><input id="pt-lname" type="text" placeholder="e.g. Smith" value=""></div>
+            <div class="field"><label>Date of Birth</label><input id="pt-dob" type="date" value=""></div>
+            <div class="field"><label>Insurance / Payer</label>
+              <select id="pt-payer">
+                <option value="">Select payer...</option>
+                <option>Aetna</option><option>BCBS (Blue Cross Blue Shield)</option>
+                <option>UnitedHealthcare</option><option>Cigna</option>
+                <option>Humana</option><option>Medicare</option>
+                <option>Medicare Advantage</option><option>Medicaid</option>
+                <option>Anthem</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Member ID</label><input id="pt-memberid" type="text" placeholder="e.g. AET123456789"></div>
+            <div class="field"><label>Referring Provider</label><input id="pt-provider" type="text" placeholder="Dr. Name" value=""></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">🏥</span> Procedure Request</div>
+          <div class="form-grid">
+            <div class="field"><label>Procedure Type</label>
+              <select id="proc-type" onchange="updateProcDetails()">
+                <option value="">Select procedure...</option>
+                <option value="mri">Lumbar MRI (CPT 72148)</option>
+                <option value="esi">Epidural Steroid Injection (CPT 62323 / 64483)</option>
+                <option value="fusion">Lumbar Spinal Fusion (CPT 22612)</option>
+                <option value="pt">Physical Therapy Extension (CPT 97110)</option>
+              </select>
+            </div>
+            <div class="field"><label>Primary Diagnosis (ICD-10)</label>
+              <select id="proc-icd">
+                <option value="">Select diagnosis...</option>
+                <option>M54.5 — Low Back Pain</option>
+                <option>M51.16 — Lumbar disc degeneration</option>
+                <option>M51.17 — Lumbosacral disc degeneration</option>
+                <option>M54.4 — Lumbago with sciatica</option>
+                <option>M47.816 — Spondylosis with radiculopathy, lumbar</option>
+                <option>M43.16 — Spondylolisthesis, lumbar</option>
+                <option>M48.06 — Spinal stenosis, lumbar</option>
+                <option>S33.5XXA — Sprain of ligaments of lumbar spine</option>
+              </select>
+            </div>
+            <div class="field"><label>Pain Score (VAS 0–10)</label>
+              <select id="proc-pain">
+                <option>Select...</option><option>1</option><option>2</option><option>3</option>
+                <option>4</option><option>5</option><option>6</option><option>7</option>
+                <option>8</option><option>9</option><option>10</option>
+              </select>
+            </div>
+            <div class="field"><label>Duration of Symptoms</label>
+              <select id="proc-duration">
+                <option>Select...</option>
+                <option>Less than 4 weeks</option><option>4–6 weeks</option>
+                <option>6–12 weeks</option><option>3–6 months</option>
+                <option>6–12 months</option><option>More than 12 months</option>
+              </select>
+            </div>
+            <div class="field form-full" id="proc-hint" style="display:none;">
+              <div class="alert info" id="proc-hint-text"></div>
+            </div>
+          </div>
+        </div>
+        <div class="action-row right">
+          <button class="btn btn-primary" onclick="goToStep2()">Next: Clinical Notes →</button>
+        </div>
+      </div>
+
+      <!-- STEP 2: CLINICAL NOTES -->
+      <div id="step-notes" style="display:none;">
+        <div class="steps">
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step active"><div class="step-dot">2</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step"><div class="step-dot">3</div><div class="step-label">AI Analysis</div></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📝</span> Clinical Documentation</div>
+          <div class="alert info">ℹ️ Paste your clinical notes below. Include: chief complaint, physical exam findings, imaging results, and treatment history. The more detail, the better the PA letter.</div>
+          <div class="field">
+            <label>Clinical Notes (copy from Athenahealth or type a summary)</label>
+            <textarea id="clinical-notes" style="min-height:200px;" placeholder="Paste full SOAP note or clinical summary here...
+
+Example: Patient is a 52-year-old male presenting with a 3-month history of low back pain radiating to the right leg in an L5 dermatomal distribution, VAS 7/10. Conservative treatment includes 8 weeks of physical therapy (completed 02/2026) and NSAIDs (naproxen 500mg BID x 6 weeks) with minimal improvement. MRI lumbar spine dated 01/15/2026 demonstrates a right paracentral disc herniation at L4-L5 with moderate right foraminal stenosis and nerve root compression. No bowel or bladder dysfunction. Straight leg raise positive at 45 degrees on the right. Neurological exam: mild decreased sensation right lateral foot, DTRs intact."></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:14px;">
+            <div class="field"><label>Physical Therapy Completed?</label>
+              <select id="pt-completed"><option>Select...</option><option>Yes — completed course</option><option>Yes — ongoing</option><option>No — contraindicated</option><option>No — patient declined</option></select>
+            </div>
+            <div class="field"><label>Medications Tried</label>
+              <select id="meds-tried" multiple style="min-height:70px;"><option>NSAIDs</option><option>Muscle relaxants</option><option>Oral steroids</option><option>Opioids</option><option>Gabapentin/Pregabalin</option><option>Topical agents</option></select>
+            </div>
+            <div class="field"><label>Imaging Available?</label>
+              <select id="imaging-avail"><option>Select...</option><option>MRI — results available</option><option>CT scan — results available</option><option>X-ray — results available</option><option>No imaging yet</option></select>
+            </div>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label>Load Sample Case (to try the demo)</label>
+            <select id="sample-case" onchange="loadSampleCase()">
+              <option value="">— Select a sample patient case —</option>
+              <option value="mri-strong">📋 Strong MRI case (high approval chance)</option>
+              <option value="mri-weak">📋 Weak MRI case (documentation gaps)</option>
+              <option value="esi-strong">💉 Strong ESI case</option>
+              <option value="fusion-strong">🔩 Strong Fusion case</option>
+              <option value="pt-strong">🏃 Strong PT Extension case</option>
+            </select>
+          </div>
+        </div>
+        <div class="action-row" style="justify-content:space-between;">
+          <button class="btn btn-secondary" onclick="backToStep1()">← Back</button>
+          <button class="btn btn-primary" onclick="runAnalysis()">🤖 Analyze &amp; Generate PA Letter →</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: PROCESSING -->
+      <div id="step-processing" style="display:none;">
+        <div class="steps">
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step active"><div class="step-dot">3</div><div class="step-label">AI Analysis</div></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+        <div class="card">
+          <div class="processing-box">
+            <div class="spinner big-spinner" style="width:48px;height:48px;border-width:4px;border-top-color:var(--teal);border-color:rgba(14,124,123,0.2);border-top-color:var(--teal);"></div>
+            <div style="font-size:16px;font-weight:600;color:var(--navy);margin-top:16px;">Agent is analyzing...</div>
+            <div class="processing-step" id="proc-step-text">Retrieving patient data from Athenahealth...</div>
+            <div style="margin-top:20px;background:var(--bg);border-radius:8px;padding:16px;text-align:left;font-size:12px;color:var(--muted);max-width:480px;margin:20px auto 0;" id="proc-log"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 4: RESULTS -->
+      <div id="step-results" style="display:none;">
+        <div class="steps">
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">AI Analysis</div></div>
+          <div class="step active"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+
+        <div id="approval-alert"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card">
+            <div class="card-title"><span class="icon">✅</span> Criteria Gap Analysis</div>
+            <div class="criteria-list" id="criteria-results"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="icon">📄</span> PA Summary</div>
+            <div id="pa-summary"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="icon">📝</span> Generated PA Letter</div>
+          <div class="alert success">✅ Letter drafted and ready for your review. Read it carefully before approving — you are responsible for its clinical accuracy.</div>
+          <div class="letter-box" id="pa-letter"></div>
+          <div class="action-row" style="justify-content:space-between;margin-top:16px;">
+            <div style="display:flex;gap:10px;">
+              <button class="btn btn-secondary" onclick="copyLetter()">📋 Copy Letter</button>
+              <button class="btn btn-secondary" onclick="backToStep1()">🔄 New PA</button>
+            </div>
+            <button class="btn btn-primary" onclick="submitPA()">✅ Approve &amp; Submit to Payer →</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end new-pa -->
+
+    <!-- ───── PA QUEUE ───── -->
+    <div class="view" id="view-queue">
+      <div class="card">
+        <div class="card-title"><span class="icon">📋</span> Active PA Queue</div>
+        <table class="queue-table">
+          <thead><tr>
+            <th>Patient</th><th>Procedure</th><th>Payer</th><th>Submitted</th><th>Status</th><th>Action</th>
+          </tr></thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ───── CRITERIA REFERENCE ───── -->
+    <div class="view" id="view-criteria">
+      <div class="card">
+        <div class="card-title"><span class="icon">📘</span> Payer Criteria Reference</div>
+        <div class="alert info">ℹ️ These are the medical necessity criteria the agent checks against for each procedure type. Based on major payer LCDs and clinical guidelines as of 2025.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;" id="criteria-tabs">
+          <button class="btn btn-primary" onclick="showCriteria('mri',this)">Lumbar MRI</button>
+          <button class="btn btn-secondary" onclick="showCriteria('esi',this)">ESI</button>
+          <button class="btn btn-secondary" onclick="showCriteria('fusion',this)">Lumbar Fusion</button>
+          <button class="btn btn-secondary" onclick="showCriteria('pt',this)">PT Extension</button>
+        </div>
+        <div id="criteria-content"></div>
+      </div>
+    </div>
+
+    <!-- ───── SETTINGS ───── -->
+    <div class="view" id="view-settings">
+      <div class="card">
+        <div class="card-title"><span class="icon">⚙️</span> Agent Settings</div>
+        <div id="settings-status-alert" class="alert info">🔄 Checking backend server connection...</div>
+        <div class="form-grid">
+          <div class="field"><label>Anthropic API Key</label><input id="settings-api-key" type="password" placeholder="sk-ant-... (paste your key here)"></div>
+          <div class="field"><label>Practice Name</label><input id="settings-practice" type="text" placeholder="e.g. Advanced Spine Center" value="Spine Clinic"></div>
+          <div class="field"><label>Provider Name</label><input id="settings-provider" type="text" placeholder="e.g. Dr. Sarah Mitchell"></div>
+          <div class="field"><label>Primary NPI</label><input id="settings-npi" type="text" placeholder="10-digit NPI number"></div>
+        </div>
+        <div class="action-row right" style="margin-top:8px;">
+          <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🔌</span> Athenahealth Connection</div>
+        <div class="alert warning">⚡ Not yet connected. In the full version, the agent reads directly from your Athenahealth charts — no copy-pasting needed.</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.7;">To connect to Athenahealth: register as an Athenahealth Marketplace developer at <strong>developer.athenahealth.com</strong>, obtain OAuth 2.0 credentials, and enter your Client ID and Secret below.</p>
+        <div class="form-grid" style="margin-top:14px;">
+          <div class="field"><label>Athenahealth Client ID</label><input type="text" placeholder="Your client ID"></div>
+          <div class="field"><label>Athenahealth Client Secret</label><input type="password" placeholder="Your client secret"></div>
+        </div>
+        <div class="action-row right" style="margin-top:8px;">
+          <button class="btn btn-outline">Test Connection</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- content -->
+</div><!-- main -->
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// BACKEND CONNECTION
+// ════════════════════════════════════════════════════════════════
+
+// ── Change this to your Railway URL once deployed, e.g.:
+// const BACKEND = 'https://spinepa-backend.up.railway.app';
+const BACKEND = window.SPINEPA_BACKEND || '';// same-origin on Vercel
+let AI_MODE = false;
+
+async function checkBackend() {
+  try {
+    const res = await Promise.race([
+      fetch(BACKEND + '/status'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+    ]);
+    const data = await res.json();
+    AI_MODE = data.has_api_key;
+    const chip = document.getElementById('mode-chip');
+    const alert = document.getElementById('settings-status-alert');
+    if (AI_MODE) {
+      chip.className = 'ai-chip';
+      chip.textContent = '🤖 AI Mode Active';
+      if (alert) { alert.className = 'alert success'; alert.innerHTML = '✅ <strong>Backend connected and AI mode is active.</strong> The agent is using real Anthropic AI to analyze notes and write letters.'; }
+    } else {
+      chip.className = 'ai-chip';
+      chip.style.background = '#E67E22';
+      chip.textContent = '🔌 Server Connected';
+      if (alert) { alert.className = 'alert warning'; alert.innerHTML = '🔌 <strong>Backend server is running, but no API key is saved yet.</strong> Paste your Anthropic API key below and click Save Settings to enable AI mode.'; }
+    }
+  } catch {
+    AI_MODE = false;
+    const alert = document.getElementById('settings-status-alert');
+    if (alert) {
+      alert.className = 'alert warning';
+      alert.innerHTML = '⚠️ <strong>Backend server not running.</strong> To enable AI mode: open the <code>SpinePA_Backend</code> folder on your Desktop and double-click <code>START_SERVER.bat</code>, then refresh this page. The app still works in demo mode without it.';
+    }
+  }
+}
+
+async 
+    if (BACKEND === '') {
+      alert('On Vercel, settings are managed via Environment Variables. Set ANTHROPIC_API_KEY, PRACTICE_NAME, PROVIDER_NAME, and PROVIDER_NPI in Vercel.');
+      return;
+    }
+  const key      = document.getElementById('settings-api-key').value.trim();
+  const practice = document.getElementById('settings-practice').value.trim();
+  const provider = document.getElementById('settings-provider').value.trim();
+  const npi      = document.getElementById('settings-npi').value.trim();
+  const alert    = document.getElementById('settings-status-alert');
+  try {
+    const res = await fetch(BACKEND + '/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, practice_name: practice, provider_name: provider, npi })
+    });
+    if (res.ok) {
+      alert.className = 'alert success';
+      alert.innerHTML = '✅ Settings saved! Refreshing connection...';
+      document.getElementById('settings-api-key').value = '';
+      setTimeout(checkBackend, 800);
+    } else {
+      alert.className = 'alert warning';
+      alert.innerHTML = '❌ Could not save — is the backend server running?';
+    }
+  } catch {
+    alert.className = 'alert warning';
+    alert.innerHTML = '❌ Backend server not reachable. Start it first by running <strong>START_SERVER.bat</strong> in the SpinePA_Backend folder.';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// DATA & CRITERIA
+// ════════════════════════════════════════════════════════════════
+
+const CRITERIA = {
+  mri: [
+    { id:'c1', label:'6+ weeks of conservative treatment documented', keywords:['physical therapy','pt','weeks','conservative','therapy','rehabilitation'], required:true },
+    { id:'c2', label:'Failure to improve with conservative management', keywords:['no improvement','minimal improvement','failed','not improved','worsening','persistent'], required:true },
+    { id:'c3', label:'Specific radicular or neurological symptoms', keywords:['radicular','radiating','radiculopathy','numbness','tingling','weakness','dermatomal','sciatica','leg pain','nerve'], required:true },
+    { id:'c4', label:'Red flag symptoms documented (or absence confirmed)', keywords:['no red flag','no bowel','no bladder','bowel','bladder','tumor','infection','fracture','malignancy','red flag'], required:false },
+    { id:'c5', label:'VAS / pain score ≥ 4 documented', keywords:['vas','pain score','7/10','6/10','8/10','9/10','5/10','4/10','out of 10'], required:true },
+    { id:'c6', label:'Physical exam findings documented', keywords:['straight leg','slr','decreased sensation','reflexes','dtr','motor','sensory','positive','tenderness'], required:true },
+  ],
+  esi: [
+    { id:'e1', label:'MRI or CT evidence of disc herniation / stenosis', keywords:['mri','disc herniation','foraminal stenosis','nerve root compression','disc bulge','stenosis','ct scan'], required:true },
+    { id:'e2', label:'Radicular symptoms with dermatomal distribution', keywords:['radicular','dermatomal','l4','l5','s1','radiating','leg pain','sciatica','arm pain'], required:true },
+    { id:'e3', label:'Failed conservative treatment (PT + medications)', keywords:['physical therapy','pt','nsaid','medication','failed','conservative'], required:true },
+    { id:'e4', label:'VAS pain score ≥ 6 documented', keywords:['vas','7/10','8/10','9/10','6/10','pain score'], required:true },
+    { id:'e5', label:'Duration of symptoms ≥ 4 weeks', keywords:['weeks','months','chronic','ongoing','persistent'], required:true },
+    { id:'e6', label:'No active infection or bleeding disorder', keywords:['no infection','no bleeding','coagulation','anticoagulant','warfarin','blood thinner'], required:false },
+  ],
+  fusion: [
+    { id:'f1', label:'MRI/CT confirming structural pathology (herniation, stenosis, instability)', keywords:['mri','ct','disc herniation','stenosis','spondylolisthesis','instability','foraminal'], required:true },
+    { id:'f2', label:'Failed conservative treatment ≥ 3–6 months', keywords:['months','physical therapy','conservative','failed','3 months','6 months','12 weeks'], required:true },
+    { id:'f3', label:'Failed interventional treatment (injections)', keywords:['injection','epidural','esi','nerve block','failed injection','minimal relief'], required:true },
+    { id:'f4', label:'Functional disability documented (ODI, VAS, ADL limitation)', keywords:['odi','disability','functional','activity','adl','unable to','limited'], required:true },
+    { id:'f5', label:'Neurological deficit or progressive symptoms', keywords:['neurological','deficit','weakness','motor','progressive','worsening','myelopathy'], required:false },
+    { id:'f6', label:'Grade II+ spondylolisthesis OR instability on dynamic X-rays', keywords:['spondylolisthesis','grade','instability','flexion','extension','dynamic','slip'], required:false },
+  ],
+  pt: [
+    { id:'p1', label:'Documented functional progress from prior PT course', keywords:['progress','improved','functional gain','increased range','strengthening','baseline'], required:true },
+    { id:'p2', label:'Specific measurable therapy goals remaining', keywords:['goal','range of motion','strength','function','ambulation','return to','target'], required:true },
+    { id:'p3', label:'Not yet at maximum medical improvement (MMI)', keywords:['not at mmi','ongoing progress','continuing','further improvement','not maximized'], required:true },
+    { id:'p4', label:'Frequency and duration of additional sessions requested', keywords:['sessions','visits','weeks','frequency','times per week'], required:true },
+    { id:'p5', label:'Prior auth number / expiry for current auth period', keywords:['auth','authorization','approval','expires','units remaining'], required:false },
+  ],
+};
+
+const SAMPLE_CASES = {
+  'mri-strong': {
+    procType: 'mri', payer: 'BCBS (Blue Cross Blue Shield)', icd: 'M54.4 — Lumbago with sciatica',
+    pain: '7', duration: '3–6 months',
+    notes: `Patient is a 52-year-old male presenting with a 3-month history of low back pain radiating to the right leg in an L5 dermatomal distribution, VAS 7/10. Conservative treatment includes 8 weeks of physical therapy completed 02/2026 and NSAIDs (naproxen 500mg BID x 6 weeks) with minimal improvement. MRI lumbar spine dated 01/15/2026 demonstrates a right paracentral disc herniation at L4-L5 with moderate right foraminal stenosis and nerve root compression. No bowel or bladder dysfunction. No red flag symptoms identified. Straight leg raise positive at 45 degrees on the right. Neurological exam: mild decreased sensation right lateral foot, DTRs intact bilaterally.`,
+    ptComp: 'Yes — completed course', meds: 'NSAIDs', imaging: 'MRI — results available',
+    fname: 'James', lname: 'Thornton', provider: 'Dr. Sarah Mitchell'
+  },
+  'mri-weak': {
+    procType: 'mri', payer: 'Aetna', icd: 'M54.5 — Low Back Pain',
+    pain: '5', duration: '4–6 weeks',
+    notes: `Patient has back pain for about 6 weeks. Taking ibuprofen. Has not done physical therapy yet. No imaging done. Wants MRI.`,
+    ptComp: 'No — patient declined', meds: 'NSAIDs', imaging: 'No imaging yet',
+    fname: 'Linda', lname: 'Park', provider: 'Dr. James Carter'
+  },
+  'esi-strong': {
+    procType: 'esi', payer: 'UnitedHealthcare', icd: 'M47.816 — Spondylosis with radiculopathy, lumbar',
+    pain: '8', duration: '6–12 weeks',
+    notes: `67-year-old female with 8-week history of right-sided low back pain with radicular symptoms to right buttock and posterior thigh in L4/L5 dermatomal distribution, VAS 8/10. MRI lumbar spine shows right foraminal stenosis at L4-L5 with moderate nerve root compression. Patient completed 6 weeks of physical therapy with only partial relief. NSAIDs trialed (meloxicam 15mg) x 4 weeks, inadequate pain control. Straight leg raise positive right at 50 degrees. No neurological deficits. No active infection, no anticoagulants, no bleeding disorder. Functional limitation: unable to walk more than 1 block.`,
+    ptComp: 'Yes — completed course', meds: 'NSAIDs', imaging: 'MRI — results available',
+    fname: 'Maria', lname: 'Santos', provider: 'Dr. Robert Chen'
+  },
+  'fusion-strong': {
+    procType: 'fusion', payer: 'Aetna', icd: 'M43.16 — Spondylolisthesis, lumbar',
+    pain: '9', duration: 'More than 12 months',
+    notes: `44-year-old male with 18-month history of severe low back pain and bilateral leg pain. VAS 9/10. MRI demonstrates grade II isthmic spondylolisthesis at L5-S1 with bilateral foraminal stenosis and disc degeneration. CT confirms bilateral pars defects. Patient completed 6 months of physical therapy (10/2024–04/2025) with no sustained improvement. Two lumbar epidural steroid injections performed (failed injection, minimal relief beyond 2 weeks). ODI score 68 (severe disability). Functional limitations: unable to work, unable to sit >15 minutes, unable to ambulate >50 meters. Neurological exam: bilateral S1 radiculopathy, decreased ankle DTRs, mild weakness plantar flexion bilaterally. Dynamic flexion-extension X-rays confirm instability with 8mm translation at L5-S1.`,
+    ptComp: 'Yes — completed course', meds: 'NSAIDs', imaging: 'MRI — results available',
+    fname: 'Robert', lname: 'Kim', provider: 'Dr. Sarah Mitchell'
+  },
+  'pt-strong': {
+    procType: 'pt', payer: 'Medicare', icd: 'M51.16 — Lumbar disc degeneration',
+    pain: '5', duration: '3–6 months',
+    notes: `58-year-old female with lumbar disc degeneration, currently in PT course authorized for 12 visits. Has completed 10 visits with documented functional progress: lumbar flexion improved from 40° to 65°, pain reduced from VAS 7 to 5, able to ambulate 3 blocks (baseline 1 block). Not yet at maximum medical improvement. Two additional visits requested to continue strengthening program and achieve target of independent home exercise program. Frequency: 2 times per week x 1 week. Prior authorization number: MED-2025-PT-88432 expiring 03/15/2026.`,
+    ptComp: 'Yes — ongoing', meds: 'NSAIDs', imaging: 'MRI — results available',
+    fname: 'Dorothy', lname: 'Williams', provider: 'Dr. James Carter'
+  },
+};
+
+let paQueue = [
+  { name:'James Thornton', proc:'Lumbar Fusion (CPT 22612)', payer:'Aetna', date:'03/01/2026', status:'draft' },
+  { name:'Maria Santos', proc:'Lumbar MRI (CPT 72148)', payer:'BCBS', date:'03/02/2026', status:'draft' },
+  { name:'Robert Kim', proc:'ESI (CPT 62323)', payer:'United', date:'03/03/2026', status:'submitted' },
+];
+
+// ════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════════════
+
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-' + id).classList.add('active');
+  const labels = { dashboard:'Dashboard', 'new-pa':'New PA Request', queue:'PA Queue', criteria:'Payer Criteria', settings:'Settings' };
+  document.getElementById('topbar-title').textContent = labels[id] || id;
+  document.getElementById('topbar-sub').textContent = {
+    dashboard:'AI-powered prior authorization for spine care',
+    'new-pa':'Submit a new prior authorization request',
+    queue:'Track and manage active PA requests',
+    criteria:'Medical necessity criteria reference by procedure',
+    settings:'Configure agent settings and integrations'
+  }[id] || '';
+  event.currentTarget && event.currentTarget.classList.add('active');
+  renderQueue();
+  if(id==='criteria') showCriteria('mri', document.querySelector('#criteria-tabs button'));
+}
+
+// ════════════════════════════════════════════════════════════════
+// FORM HELPERS
+// ════════════════════════════════════════════════════════════════
+
+function updateProcDetails() {
+  const v = document.getElementById('proc-type').value;
+  const hints = {
+    mri:'Payer requirement: document 6 weeks of conservative care + radicular symptoms.',
+    esi:'Payer requirement: MRI evidence + radicular symptoms + failed PT and medications.',
+    fusion:'Payer requirement: failed 3–6 months conservative + failed injections + functional disability.',
+    pt:'Payer requirement: documented functional progress + measurable goals remaining.'
+  };
+  if(v && hints[v]) {
+    document.getElementById('proc-hint').style.display='block';
+    document.getElementById('proc-hint-text').textContent = '💡 ' + hints[v];
+  } else {
+    document.getElementById('proc-hint').style.display='none';
+  }
+}
+
+function loadSampleCase() {
+  const k = document.getElementById('sample-case').value;
+  if(!k) return;
+  const c = SAMPLE_CASES[k];
+  document.getElementById('pt-fname').value = c.fname;
+  document.getElementById('pt-lname').value = c.lname;
+  document.getElementById('pt-payer').value = c.payer;
+  document.getElementById('pt-provider').value = c.provider;
+  document.getElementById('proc-type').value = c.procType;
+  document.getElementById('proc-icd').value = c.icd;
+  document.getElementById('proc-pain').value = c.pain;
+  document.getElementById('proc-duration').value = c.duration;
+  document.getElementById('clinical-notes').value = c.notes;
+  document.getElementById('pt-completed').value = c.ptComp;
+  document.getElementById('imaging-avail').value = c.imaging;
+  updateProcDetails();
+  alert('✅ Sample case loaded! Click "Analyze & Generate PA Letter" to see the agent work.');
+}
+
+function goToStep2() {
+  const required = ['pt-fname','pt-lname','pt-payer','proc-type','proc-icd'];
+  for(const id of required) {
+    if(!document.getElementById(id).value) {
+      alert('Please fill in all required fields before continuing.');
+      document.getElementById(id).focus();
+      return;
+    }
+  }
+  document.getElementById('step-form').style.display='none';
+  document.getElementById('step-notes').style.display='block';
+}
+
+function backToStep1() {
+  document.getElementById('step-form').style.display='block';
+  document.getElementById('step-notes').style.display='none';
+  document.getElementById('step-processing').style.display='none';
+  document.getElementById('step-results').style.display='none';
+  document.getElementById('sample-case').value='';
+}
+
+// ════════════════════════════════════════════════════════════════
+// ANALYSIS ENGINE (Demo Mode)
+// ════════════════════════════════════════════════════════════════
+
+function analyzeNotes(notes, procType) {
+  const lower = notes.toLowerCase();
+  const criteria = CRITERIA[procType];
+  return criteria.map(c => {
+    const found = c.keywords.some(kw => lower.includes(kw));
+    return { ...c, status: found ? 'met' : (c.required ? 'missing' : 'unmet') };
+  });
+}
+
+function runAnalysis() {
+  const notes = document.getElementById('clinical-notes').value.trim();
+  if(notes.length < 30) { alert('Please enter clinical notes before analyzing.'); return; }
+  document.getElementById('step-notes').style.display='none';
+  document.getElementById('step-processing').style.display='block';
+
+  const demoSteps = [
+    '🔗 Connecting to Athenahealth (demo mode)...',
+    '📋 Retrieving patient chart and insurance details...',
+    '🔍 Loading payer medical necessity criteria...',
+    '🤖 Analyzing clinical notes...',
+    '✅ Matching documentation to payer criteria...',
+    '📝 Generating prior authorization letter...',
+    '🎯 Finalizing gap analysis...'
+  ];
+  const aiSteps = [
+    '🔗 Connecting to Athenahealth...',
+    '📋 Retrieving patient chart and insurance details...',
+    '🔍 Loading payer medical necessity criteria...',
+    '🤖 Claude AI reading clinical notes...',
+    '✅ AI matching documentation to payer criteria...',
+    '📝 AI generating prior authorization letter...',
+    '🎯 Finalizing gap analysis...'
+  ];
+  const steps = AI_MODE ? aiSteps : demoSteps;
+  let i = 0;
+  const log = document.getElementById('proc-log');
+  const stepTxt = document.getElementById('proc-step-text');
+  log.textContent = '';
+
+  const interval = setInterval(() => {
+    if(i < steps.length) {
+      stepTxt.textContent = steps[i];
+      log.textContent += (i>0?'\n':'') + '✓ ' + (steps[i-1]||steps[0]).replace(/^[^\s]+ /,'');
+      i++;
+    } else {
+      clearInterval(interval);
+      if(AI_MODE) {
+        runAIAnalysis();
+      } else {
+        showResults();
+      }
+    }
+  }, AI_MODE ? 500 : 600);
+}
+
+async function runAIAnalysis() {
+  const notes     = document.getElementById('clinical-notes').value.trim();
+  const procType  = document.getElementById('proc-type').value;
+  const payer     = document.getElementById('pt-payer').value;
+  const fname     = document.getElementById('pt-fname').value;
+  const lname     = document.getElementById('pt-lname').value;
+  const icd       = document.getElementById('proc-icd').value;
+  const pain      = document.getElementById('proc-pain').value;
+  const duration  = document.getElementById('proc-duration').value;
+  const provider  = document.getElementById('pt-provider').value || 'Treating Physician';
+
+  document.getElementById('proc-step-text').textContent = '🤖 Claude AI is thinking — this takes 10–20 seconds...';
+
+  try {
+    // Step 1: Analyze criteria
+    const analyzeRes = await fetch(BACKEND + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes, proc_type: procType, payer, patient: { fname, lname } })
+    });
+    const analyzeData = await analyzeRes.json();
+    if (!analyzeRes.ok) { throw new Error(analyzeData.error || 'Analysis failed'); }
+
+    document.getElementById('proc-step-text').textContent = '📝 Generating personalized PA letter...';
+
+    // Step 2: Generate letter
+    const metCriteria = (analyzeData.criteria || []).filter(c => c.status === 'met').map(c => c.label);
+    const letterRes = await fetch(BACKEND + '/generate-letter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes, proc_type: procType, payer, icd, pain, duration, provider, fname, lname, met_criteria: metCriteria })
+    });
+    const letterData = await letterRes.json();
+    if (!letterRes.ok) { throw new Error(letterData.error || 'Letter generation failed'); }
+
+    showAIResults(analyzeData, letterData.letter, { fname, lname, payer, icd, procType, pain, duration });
+
+  } catch(err) {
+    document.getElementById('step-processing').style.display='none';
+    document.getElementById('step-notes').style.display='block';
+    alert('AI Error: ' + err.message + '\n\nThe app will continue in Demo Mode.');
+    AI_MODE = false;
+    showResults();
+  }
+}
+
+function showAIResults(analyzeData, letter, meta) {
+  document.getElementById('step-processing').style.display='none';
+  document.getElementById('step-results').style.display='block';
+
+  const results      = analyzeData.criteria || [];
+  const likelihood   = analyzeData.approval_likelihood || 'moderate';
+  const summary      = analyzeData.summary || '';
+  const metCount     = results.filter(r => r.status === 'met').length;
+  const missingReq   = results.filter(r => r.status === 'missing' && r.required);
+
+  // Alert banner
+  const alertEl = document.getElementById('approval-alert');
+  if (likelihood === 'high') {
+    alertEl.innerHTML = `<div class="alert success">🤖 <strong>AI Assessment: High Approval Probability.</strong> ${summary}</div>`;
+  } else if (likelihood === 'moderate') {
+    alertEl.innerHTML = `<div class="alert warning">🤖 <strong>AI Assessment: Moderate Approval Probability.</strong> ${summary}</div>`;
+  } else {
+    alertEl.innerHTML = `<div class="alert" style="background:#FFEBEE;border:1px solid #F5A0A0;color:#C0392B;">🤖 <strong>AI Assessment: Low Approval Probability.</strong> ${summary}</div>`;
+  }
+
+  // Criteria list
+  const cl = document.getElementById('criteria-results');
+  cl.innerHTML = '';
+  results.forEach(r => {
+    const icon = r.status==='met' ? '✅' : (r.required ? '⚠️' : '❌');
+    cl.innerHTML += `<div class="criteria-item ${r.status}">
+      <div class="criteria-icon">${icon}</div>
+      <div class="criteria-text">
+        <div class="criteria-label">${r.label}</div>
+        <div class="criteria-note">${r.note || (r.status==='met' ? 'Documented' : r.required ? 'May be missing — add to notes if applicable' : 'Not documented')}</div>
+      </div>
+    </div>`;
+  });
+
+  // Summary panel
+  const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'ESI (CPT 62323/64483)', fusion:'Lumbar Fusion (CPT 22612)', pt:'PT Extension (CPT 97110)' };
+  const likeColor = { high:'var(--green)', moderate:'var(--amber)', low:'var(--red)' };
+  document.getElementById('pa-summary').innerHTML = `
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:7px 0;color:var(--muted);width:50%">Patient</td><td style="font-weight:600">${meta.fname} ${meta.lname}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Procedure</td><td style="font-weight:600;border-top:1px solid var(--border)">${procLabels[meta.procType]||meta.procType}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${meta.payer}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Diagnosis</td><td style="font-weight:600;border-top:1px solid var(--border)">${meta.icd}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Criteria Met</td><td style="font-weight:600;border-top:1px solid var(--border);color:${metCount===results.length?'var(--green)':'var(--amber)'}">${metCount} / ${results.length}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">AI Approval Likelihood</td>
+        <td style="font-weight:700;border-top:1px solid var(--border);color:${likeColor[likelihood]||'var(--amber)'}">
+          ${likelihood.toUpperCase()} ${likelihood==='high'?'✅':likelihood==='moderate'?'⚠️':'❌'}
+        </td>
+      </tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Mode</td><td style="font-weight:600;border-top:1px solid var(--border);color:var(--green)">🤖 AI Generated</td></tr>
+    </table>`;
+
+  document.getElementById('pa-letter').textContent = letter;
+}
+
+function showResults() {
+  const procType = document.getElementById('proc-type').value;
+  const notes = document.getElementById('clinical-notes').value;
+  const fname = document.getElementById('pt-fname').value;
+  const lname = document.getElementById('pt-lname').value;
+  const payer = document.getElementById('pt-payer').value;
+  const icd = document.getElementById('proc-icd').value;
+  const pain = document.getElementById('proc-pain').value;
+  const duration = document.getElementById('proc-duration').value;
+  const provider = document.getElementById('pt-provider').value || 'Treating Physician';
+
+  const results = analyzeNotes(notes, procType);
+  const metCount = results.filter(r=>r.status==='met').length;
+  const missingRequired = results.filter(r=>r.status==='missing' && r.required);
+  const totalRequired = results.filter(r=>r.required).length;
+
+  document.getElementById('step-processing').style.display='none';
+  document.getElementById('step-results').style.display='block';
+
+  // Alert banner
+  const alertEl = document.getElementById('approval-alert');
+  if(missingRequired.length === 0) {
+    alertEl.innerHTML = `<div class="alert success">🎉 <strong>High Approval Probability.</strong> All required criteria are documented. This PA is well-positioned for approval.</div>`;
+  } else if(missingRequired.length <= 2) {
+    alertEl.innerHTML = `<div class="alert warning">⚠️ <strong>Documentation Gaps Found.</strong> ${missingRequired.length} required criterion/criteria may be missing from your notes. Review the letter and add documentation before submitting.</div>`;
+  } else {
+    alertEl.innerHTML = `<div class="alert" style="background:#FFEBEE;border:1px solid #F5A0A0;color:#C0392B;">❌ <strong>Multiple Documentation Gaps.</strong> ${missingRequired.length} required criteria appear undocumented. Consider adding documentation or discussing with your physician before submitting.</div>`;
+  }
+
+  // Criteria list
+  const cl = document.getElementById('criteria-results');
+  cl.innerHTML = '';
+  results.forEach(r => {
+    const icon = r.status==='met' ? '✅' : (r.required ? '⚠️' : '❌');
+    const statusLabel = r.status==='met' ? 'Documented' : (r.required ? 'May be missing' : 'Not documented');
+    cl.innerHTML += `<div class="criteria-item ${r.status}">
+      <div class="criteria-icon">${icon}</div>
+      <div class="criteria-text">
+        <div class="criteria-label">${r.label}</div>
+        <div class="criteria-note">${statusLabel}${r.status!=='met' && r.required ? ' — add to notes if applicable' : ''}</div>
+      </div>
+    </div>`;
+  });
+
+  // PA Summary
+  const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'Epidural Steroid Injection (CPT 62323/64483)', fusion:'Lumbar Spinal Fusion (CPT 22612)', pt:'Physical Therapy Extension (CPT 97110)' };
+  document.getElementById('pa-summary').innerHTML = `
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:7px 0;color:var(--muted);width:50%">Patient</td><td style="font-weight:600">${fname} ${lname}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Procedure</td><td style="font-weight:600;border-top:1px solid var(--border)">${procLabels[procType]}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${payer}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Diagnosis</td><td style="font-weight:600;border-top:1px solid var(--border)">${icd}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Criteria Met</td><td style="font-weight:600;border-top:1px solid var(--border);color:${metCount===results.length?'var(--green)':'var(--amber)'}">${metCount} / ${results.length}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Approval Likelihood</td>
+        <td style="font-weight:700;border-top:1px solid var(--border);color:${missingRequired.length===0?'var(--green)':missingRequired.length<=2?'var(--amber)':'var(--red)'}">
+          ${missingRequired.length===0?'HIGH ✅':missingRequired.length<=2?'MODERATE ⚠️':'LOW ❌'}
+        </td>
+      </tr>
+    </table>`;
+
+  // Generate letter
+  document.getElementById('pa-letter').textContent = generateLetter({ fname, lname, payer, icd, procType, pain, duration, provider, notes, results });
+}
+
+function generateLetter({ fname, lname, payer, icd, procType, pain, duration, provider, notes, results }) {
+  const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  const procLabels = { mri:'Lumbar Magnetic Resonance Imaging (MRI)', esi:'Lumbar Epidural Steroid Injection', fusion:'Lumbar Spinal Fusion Surgery', pt:'Physical Therapy (Extended Course)' };
+  const cptCodes = { mri:'CPT 72148', esi:'CPT 62323 / CPT 64483', fusion:'CPT 22612', pt:'CPT 97110' };
+  const procLabel = procLabels[procType];
+  const cptCode = cptCodes[procType];
+
+  const clinicalSummary = notes.length > 50
+    ? notes.substring(0, 600) + (notes.length > 600 ? '...' : '')
+    : 'Patient presents with lumbar spine pathology requiring the requested intervention as described below.';
+
+  const metCriteria = results.filter(r=>r.status==='met').map(r=>`  • ${r.label}`).join('\n');
+
+  let clinicalJustification = '';
+  if(procType==='mri') clinicalJustification=`The patient has undergone a minimum of 6 weeks of conservative treatment including physical therapy and analgesic medications without adequate improvement. The patient demonstrates persistent radicular symptoms and neurological findings that necessitate advanced imaging to guide further management and rule out surgical pathology.`;
+  else if(procType==='esi') clinicalJustification=`MRI imaging confirms structural pathology consistent with the patient's radicular symptom pattern. The patient has failed conservative treatment including physical therapy and oral medications. Epidural steroid injection is medically necessary to provide pain relief, reduce inflammation at the site of nerve root compression, and avoid surgical intervention.`;
+  else if(procType==='fusion') clinicalJustification=`The patient has undergone an extensive course of conservative management including physical therapy and interventional procedures (epidural steroid injections) without durable relief. Imaging confirms structural instability and neural compression. Continued non-operative management is unlikely to provide meaningful benefit, and surgical stabilization is medically necessary to address functional disability and prevent neurological deterioration.`;
+  else clinicalJustification=`The patient demonstrates ongoing functional improvement and has not yet reached maximum medical improvement. Continued physical therapy is medically necessary to achieve established functional goals and prevent functional regression. Discharge at this time would be clinically premature.`;
+
+  return `${today}
+
+Prior Authorization Department
+${payer}
+
+Re: Prior Authorization Request
+Patient Name: ${fname} ${lname}
+Diagnosis (ICD-10): ${icd}
+Requested Procedure: ${procLabel}
+CPT Code: ${cptCode}
+Requesting Provider: ${provider}
+
+Dear Prior Authorization Reviewer,
+
+I am writing to request prior authorization for ${procLabel} (${cptCode}) for the above-named patient. This letter provides a summary of the clinical findings, treatment history, and medical necessity supporting this request.
+
+CLINICAL SUMMARY
+${clinicalSummary}
+
+MEDICAL NECESSITY JUSTIFICATION
+${clinicalJustification}
+
+DOCUMENTATION OF REQUIRED CRITERIA
+The following medical necessity criteria have been met and are documented in the patient's medical record:
+
+${metCriteria}
+
+PAIN AND FUNCTIONAL STATUS
+Current pain level: ${pain}/10 (VAS scale)
+Duration of symptoms: ${duration}
+The patient's pain and functional limitations have significantly impacted activities of daily living and quality of life.
+
+CONCLUSION
+Based on the above clinical documentation, I respectfully request authorization for ${procLabel} (${cptCode}) for this patient. This intervention is medically necessary, clinically indicated, and consistent with established evidence-based guidelines and the medical necessity criteria outlined by ${payer}.
+
+Please do not hesitate to contact our office if additional clinical information is required. I am available for a peer-to-peer review at your request.
+
+Sincerely,
+
+${provider}
+Spine Clinic
+Phone: [Clinic Phone]
+Fax: [Clinic Fax]
+NPI: [Provider NPI]
+
+Attachments:
+  • Relevant clinical notes and SOAP documentation
+  • Imaging reports (MRI/CT/X-ray as applicable)
+  • Physical therapy records (if applicable)`;
+}
+
+function copyLetter() {
+  const text = document.getElementById('pa-letter').textContent;
+  navigator.clipboard.writeText(text).then(() => alert('✅ Letter copied to clipboard! You can paste it into your payer portal or fax cover sheet.'));
+}
+
+function submitPA() {
+  const name = document.getElementById('pt-fname').value + ' ' + document.getElementById('pt-lname').value;
+  const proc = document.getElementById('proc-type').value;
+  const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'ESI (CPT 62323)', fusion:'Lumbar Fusion (CPT 22612)', pt:'PT Extension (CPT 97110)' };
+  const payer = document.getElementById('pt-payer').value;
+  paQueue.unshift({ name, proc: procLabels[proc], payer, date: new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}), status:'submitted' });
+  document.getElementById('queue-badge').textContent = paQueue.filter(p=>p.status==='draft').length;
+  document.getElementById('pending-count').textContent = paQueue.filter(p=>p.status==='draft').length;
+  renderQueue();
+  alert('✅ PA marked as submitted!\n\nIn the full version with payer integration, this would automatically submit to ' + payer + ' and track the response.\n\nFor now: copy the letter above and submit via your payer portal or fax.');
+  showView('queue');
+}
+
+// ════════════════════════════════════════════════════════════════
+// QUEUE
+// ════════════════════════════════════════════════════════════════
+
+function renderQueue() {
+  const tbody = document.getElementById('queue-body');
+  if(!tbody) return;
+  tbody.innerHTML = paQueue.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.proc}</td>
+      <td>${p.payer}</td>
+      <td>${p.date}</td>
+      <td><span class="status-pill ${p.status}">${{draft:'Draft Ready',submitted:'Submitted',approved:'Approved',denied:'Denied'}[p.status]||p.status}</span></td>
+      <td><button class="btn btn-outline" style="padding:5px 10px;font-size:12px;" onclick="alert('Full review panel coming in v2!')">Review</button></td>
+    </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// CRITERIA REFERENCE
+// ════════════════════════════════════════════════════════════════
+
+function showCriteria(type, btn) {
+  if(btn) {
+    document.querySelectorAll('#criteria-tabs button').forEach(b => { b.className='btn btn-secondary'; });
+    btn.className = 'btn btn-primary';
+  }
+  const labels = { mri:'Lumbar MRI (CPT 72148)', esi:'Epidural Steroid Injection (CPT 62323/64483)', fusion:'Lumbar Spinal Fusion (CPT 22612)', pt:'Physical Therapy Extension (CPT 97110)' };
+  const c = CRITERIA[type];
+  document.getElementById('criteria-content').innerHTML = `
+    <h3 style="font-size:15px;color:var(--navy);margin-bottom:14px;">${labels[type]} — Medical Necessity Criteria</h3>
+    <div class="criteria-list">
+      ${c.map(item=>`
+        <div class="criteria-item met" style="background:var(--bg);border-color:var(--border);">
+          <div class="criteria-icon">${item.required?'🔴':'🟡'}</div>
+          <div class="criteria-text">
+            <div class="criteria-label">${item.label}</div>
+            <div class="criteria-note">${item.required?'Required criterion':'Supportive criterion (strengthens case)'}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:14px;font-size:12px;color:var(--muted);">🔴 Required criterion — must be documented for approval. 🟡 Supportive — strengthens the case but not always mandatory. Criteria based on major payer LCDs and clinical guidelines, 2025.</div>`;
+}
+
+// Init
+renderQueue();
+showCriteria('mri', document.querySelector('#criteria-tabs button'));
+checkBackend();
+</script>
+</body>
+</html>
