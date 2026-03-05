@@ -1,14 +1,5 @@
-# Secrets / local config
-config.json
-.env
-.env.*
-
-# Python
+.DS_Store
 __pycache__/
 *.pyc
-.venv/
-venv/
-
-# OS
-.DS_Store
-Thumbs.db
+config.json
+.env

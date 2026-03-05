@@ -479,7 +479,7 @@ Example: Patient is a 52-year-old male presenting with a 3-month history of low 
 
 // ── Change this to your Railway URL once deployed, e.g.:
 // const BACKEND = 'https://spinepa-backend.up.railway.app';
-const BACKEND = window.SPINEPA_BACKEND || '';// same-origin on Vercel
+const BACKEND = window.SPINEPA_BACKEND || 'http://localhost:5000';
 let AI_MODE = false;
 
 async function checkBackend() {
@@ -512,11 +512,7 @@ async function checkBackend() {
   }
 }
 
-async 
-    if (BACKEND === '') {
-      alert('On Vercel, settings are managed via Environment Variables. Set ANTHROPIC_API_KEY, PRACTICE_NAME, PROVIDER_NAME, and PROVIDER_NPI in Vercel.');
-      return;
-    }
+async function saveSettings() {
   const key      = document.getElementById('settings-api-key').value.trim();
   const practice = document.getElementById('settings-practice').value.trim();
   const provider = document.getElementById('settings-provider').value.trim();

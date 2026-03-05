@@ -1,5 +1,4 @@
-"""
-SpinePA Agent — Flask app for Vercel.
+"""SpinePA Agent — Flask app for Vercel.
 
 - Serves the UI from ./public/index.html
 - Provides backend routes: /status, /settings (local only), /analyze, /generate-letter
@@ -12,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -19,12 +19,14 @@ import anthropic
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = ROOT_DIR / "public"
 CONFIG_FILE = ROOT_DIR / "config.json"  # local-only (gitignored)
 
 app = Flask(__name__)
 CORS(app)
+
 
 # ─────────────────────────────────────────────────────────────
 # Payer criteria (used by the AI as a reference)
@@ -81,6 +83,7 @@ CPT_CODES = {
 # ─────────────────────────────────────────────────────────────
 # Config helpers
 # ─────────────────────────────────────────────────────────────
+
 def load_config() -> dict:
     """Load config from local config.json (if present), overridden by env vars."""
     config: dict = {}
@@ -101,6 +104,23 @@ def load_config() -> dict:
         config["provider_name"] = os.environ["PROVIDER_NAME"]
     if os.environ.get("PROVIDER_NPI"):
         config["npi"] = os.environ["PROVIDER_NPI"]
+
+# Convenience fallback: if PROVIDER_NPI is not set, but PROVIDER_NPI_* vars exist,
+# try to pick one that matches PROVIDER_NAME (e.g., PROVIDER_NPI_TRUUMEES).
+if not config.get("npi"):
+    provider_name = config.get("provider_name", "")
+    provider_name_norm = re.sub(r"[^A-Za-z0-9]+", "_", provider_name).strip("_").upper()
+    candidates = {k: v for k, v in os.environ.items() if k.startswith("PROVIDER_NPI_") and v}
+    if candidates:
+        # Match by suffix
+        for k, v in candidates.items():
+            if provider_name_norm and k.upper().endswith("_" + provider_name_norm):
+                config["npi"] = v
+                break
+        # If only one candidate exists, use it
+        if not config.get("npi") and len(candidates) == 1:
+            config["npi"] = next(iter(candidates.values()))
+
     if os.environ.get("ANTHROPIC_MODEL"):
         config["anthropic_model"] = os.environ["ANTHROPIC_MODEL"]
 
@@ -118,36 +138,28 @@ def _is_vercel() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────
-# Static UI (SPA-friendly)
+# Static UI
 # ─────────────────────────────────────────────────────────────
-@app.get("/")
+
+@app.route("/")
 def home():
     return send_from_directory(PUBLIC_DIR, "index.html")
 
 
-@app.get("/<path:filename>")
+@app.route("/<path:filename>")
 def static_files(filename: str):
-    """
-    Serve files from /public if they exist.
-    Otherwise, return index.html as an SPA fallback.
-
-    This prevents Flask "Not Found" when the browser requests:
-    - /index.html
-    - /favicon.ico
-    - /anything (deep-link refresh)
-    """
+    # Allow other static files if you add them later
     target = PUBLIC_DIR / filename
     if target.exists() and target.is_file():
         return send_from_directory(PUBLIC_DIR, filename)
-
-    # SPA fallback (important): unknown paths return the UI shell
-    return send_from_directory(PUBLIC_DIR, "index.html")
+    return jsonify({"error": "Not found"}), 404
 
 
 # ─────────────────────────────────────────────────────────────
 # API
 # ─────────────────────────────────────────────────────────────
-@app.get("/status")
+
+@app.route("/status")
 def status():
     config = load_config()
     has_key = bool((config.get("api_key") or "").strip())
@@ -162,7 +174,7 @@ def status():
     )
 
 
-@app.post("/settings")
+@app.route("/settings", methods=["POST"])
 def settings():
     if _is_vercel():
         return (
@@ -192,7 +204,7 @@ def settings():
     return jsonify({"ok": True})
 
 
-@app.post("/analyze")
+@app.route("/analyze", methods=["POST"])
 def analyze():
     config = load_config()
     api_key = (config.get("api_key") or "").strip()
@@ -239,7 +251,7 @@ Return ONLY a valid JSON object in this exact format (no other text, no markdown
   "summary": "Two sentence summary of the case strength and any key gaps."
 }}"""
 
-    model = config.get("anthropic_model") or "claude-sonnet-4-5-20250929"
+    model = config.get("anthropic_model") or "claude-3-5-sonnet-20240620"
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -291,7 +303,7 @@ Return ONLY a valid JSON object in this exact format (no other text, no markdown
         return jsonify({"error": f"AI analysis failed: {str(e)}"}), 500
 
 
-@app.post("/generate-letter")
+@app.route("/generate-letter", methods=["POST"])
 def generate_letter():
     config = load_config()
     api_key = (config.get("api_key") or "").strip()
@@ -349,7 +361,7 @@ Write a compelling, medically accurate prior authorization letter that:
 
 Write the full letter now. Do not include any preamble or explanation — just the letter itself."""
 
-    model = config.get("anthropic_model") or "claude-sonnet-4-5-20250929"
+    model = config.get("anthropic_model") or "claude-3-5-sonnet-20240620"
 
     try:
         client = anthropic.Anthropic(api_key=api_key)

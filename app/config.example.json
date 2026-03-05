@@ -1,6 +1,7 @@
 {
-  "api_key": "PUT_YOUR_ANTHROPIC_KEY_HERE",
-  "practice_name": "Your Practice Name",
-  "npi": "",
-  "provider_name": ""
+  "anthropic_api_key": "YOUR_ANTHROPIC_API_KEY",
+  "anthropic_model": "claude-3-5-sonnet-20240620",
+  "practice_name": "Example Spine Practice",
+  "provider_name": "Example Provider",
+  "npi": "1234567890"
 }

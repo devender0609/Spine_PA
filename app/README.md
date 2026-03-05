@@ -1,37 +1,25 @@
-# SpinePA Agent (Vercel + GitHub)
+# SpinePA Agent (Vercel)
 
-This repo deploys the SpinePA Agent UI + Flask backend as a single Vercel Function.
+This deploys a Flask API + static UI to Vercel.
 
-## 1) Local run (recommended for testing)
+## Required Vercel Environment Variables
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # (Windows) .venv\\Scripts\\activate
-pip install -r requirements.txt
-
-# Create local config
-cp config.example.json config.json
-# Edit config.json and add your Anthropic API key
-
-python -m flask --app api.index run --port 5000
-```
-
-Open: http://localhost:5000
-
-## 2) Deploy on Vercel
-
-1. Push this repo to GitHub.
-2. In Vercel, import the GitHub repo.
-3. Set Environment Variables in Vercel:
-
-- `ANTHROPIC_API_KEY` (required)
+- `ANTHROPIC_API_KEY` (required for AI features)
+- `ANTHROPIC_MODEL` (optional) — default: `claude-3-5-sonnet-20240620`
 - `PRACTICE_NAME` (optional)
 - `PROVIDER_NAME` (optional)
 - `PROVIDER_NPI` (optional)
-- `ANTHROPIC_MODEL` (optional, defaults to `claude-sonnet-4-5-20250929`)
 
-Then deploy.
+> If you use provider-specific NPIs (e.g., `PROVIDER_NPI_TRUUMEES`), the backend will try to match it to `PROVIDER_NAME`
+> when `PROVIDER_NPI` is not set.
 
-## Notes
-- The `/settings` endpoint is **disabled on Vercel** (serverless filesystem is not a reliable place to store secrets). Use Vercel env vars instead.
-- Do **not** commit real API keys to GitHub.
+After editing env vars, trigger a redeploy (or push a new commit).
+
+## Local run
+
+```bash
+pip install -r requirements.txt
+python api/index.py
+```
+
+Open http://127.0.0.1:5000
