@@ -127,7 +127,7 @@ Return JSON only.
         client = anthropic.Anthropic(api_key=api_key)
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             max_tokens=1200,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -184,7 +184,7 @@ Write a persuasive prior authorization request letter.
         client = anthropic.Anthropic(api_key=api_key)
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
