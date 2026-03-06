@@ -1,4 +1,3 @@
-```python
 """SpinePA Agent — Flask backend for Vercel serverless deployment."""
 
 from __future__ import annotations
@@ -194,4 +193,3 @@ Write a persuasive prior authorization request letter.
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-```
