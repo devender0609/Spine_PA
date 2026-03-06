@@ -1,5 +1,5 @@
-.DS_Store
+config.json
 __pycache__/
 *.pyc
-config.json
 .env
+.vercel

@@ -479,7 +479,7 @@ Example: Patient is a 52-year-old male presenting with a 3-month history of low 
 
 // ── Change this to your Railway URL once deployed, e.g.:
 // const BACKEND = 'https://spinepa-backend.up.railway.app';
-const BACKEND = window.SPINEPA_BACKEND || 'http://localhost:5000';
+const BACKEND = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : '';
 let AI_MODE = false;
 
 async function checkBackend() {
