@@ -496,26 +496,46 @@ async function checkBackend() {
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
     ]);
     const data = await res.json();
-    AI_MODE = data.has_api_key;
+    AI_MODE = !!data.has_api_key;
     loadProviderDirectory(data);
+
     const chip = document.getElementById('mode-chip');
     const alert = document.getElementById('settings-status-alert');
-    if (AI_MODE) {
+    const practiceInput = document.getElementById('settings-practice');
+    const providerInput = document.getElementById('settings-provider');
+    const npiInput = document.getElementById('settings-npi');
+
+    if (practiceInput && data.practice_name) practiceInput.value = data.practice_name;
+    if (providerInput && data.provider_name) providerInput.value = data.provider_name;
+    if (npiInput && data.npi) npiInput.value = data.npi;
+
+    if (chip) {
       chip.className = 'ai-chip';
-      chip.textContent = '🤖 AI Mode Active';
-      if (alert) { alert.className = 'alert success'; alert.innerHTML = '✅ <strong>Backend connected and AI mode is active.</strong> The agent is using real Anthropic AI to analyze notes and write letters.'; }
-    } else {
-      chip.className = 'ai-chip';
-      chip.style.background = '#E67E22';
-      chip.textContent = '🔌 Server Connected';
-      if (alert) { alert.className = 'alert warning'; alert.innerHTML = '🔌 <strong>Backend server is running, but no API key is saved yet.</strong> Paste your Anthropic API key below and click Save Settings to enable AI mode.'; }
+      chip.style.background = AI_MODE ? 'rgba(255,255,255,0.18)' : '#E67E22';
+      chip.textContent = AI_MODE ? '🤖 AI Mode Active' : '🔌 Server Connected';
+    }
+
+    if (alert) {
+      if (AI_MODE) {
+        alert.className = 'alert success';
+        alert.innerHTML = '✅ <strong>Backend connected and AI mode is active.</strong> Provider directory, NPI autofill, AI analysis, and letter generation are aligned with the live Python backend.';
+      } else {
+        alert.className = 'alert warning';
+        alert.innerHTML = '🔌 <strong>Backend server is running, but no API key is configured.</strong> Add your Anthropic and provider environment variables in Vercel project settings, then redeploy. The app will still work in demo mode.';
+      }
     }
   } catch {
     AI_MODE = false;
     const alert = document.getElementById('settings-status-alert');
+    const chip = document.getElementById('mode-chip');
+    if (chip) {
+      chip.className = 'ai-chip';
+      chip.style.background = '#E67E22';
+      chip.textContent = '⚠️ Demo Mode';
+    }
     if (alert) {
       alert.className = 'alert warning';
-      alert.innerHTML = '⚠️ <strong>Backend server not running.</strong> To enable AI mode: open the <code>SpinePA_Backend</code> folder on your Desktop and double-click <code>START_SERVER.bat</code>, then refresh this page. The app still works in demo mode without it.';
+      alert.innerHTML = '⚠️ <strong>Backend server not reachable.</strong> The app can still run in demo mode, but live AI analysis and letter generation require the deployed Python backend.';
     }
   }
 }
@@ -563,31 +583,100 @@ function updateProviderNPI() {
   npiInput.value = provider ? provider.npi : '';
 }
 
+function getPatientFullName() {
+  const fname = document.getElementById('pt-fname')?.value?.trim() || '';
+  const lname = document.getElementById('pt-lname')?.value?.trim() || '';
+  return [fname, lname].filter(Boolean).join(' ').trim();
+}
+
+function parsePossibleJSON(text) {
+  if (!text || typeof text !== 'string') return null;
+  const direct = text.trim();
+  try {
+    return JSON.parse(direct);
+  } catch {}
+
+  const fencedMatch = direct.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch) {
+    try {
+      return JSON.parse(fencedMatch[1]);
+    } catch {}
+  }
+
+  const firstBrace = direct.indexOf('{');
+  const lastBrace = direct.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(direct.slice(firstBrace, lastBrace + 1));
+    } catch {}
+  }
+
+  return null;
+}
+
+function normalizeLikelihood(value, fallbackResults) {
+  const raw = (value || '').toString().trim().toLowerCase();
+  if (['high', 'moderate', 'low'].includes(raw)) return raw;
+
+  const missingRequired = (fallbackResults || []).filter(r => r.status === 'missing' && r.required).length;
+  if (missingRequired === 0) return 'high';
+  if (missingRequired <= 2) return 'moderate';
+  return 'low';
+}
+
+function normalizeAIAnalysis(analyzeData, procType, notes) {
+  const fallbackResults = analyzeNotes(notes || '', procType || 'mri');
+  const parsed = analyzeData && typeof analyzeData.analysis === 'string'
+    ? parsePossibleJSON(analyzeData.analysis)
+    : null;
+
+  const source = parsed && typeof parsed === 'object' ? parsed : (analyzeData || {});
+  const sourceResults = Array.isArray(source.criteria) ? source.criteria : [];
+
+  const normalizedResults = fallbackResults.map(fallback => {
+    const matched = sourceResults.find(item => (item.id && item.id === fallback.id) || (item.label && item.label === fallback.label));
+    if (!matched) return fallback;
+    const status = ['met', 'missing', 'unmet'].includes((matched.status || '').toLowerCase())
+      ? matched.status.toLowerCase()
+      : fallback.status;
+    return {
+      ...fallback,
+      ...matched,
+      status,
+      required: typeof matched.required === 'boolean' ? matched.required : fallback.required,
+      label: matched.label || fallback.label,
+      note: matched.note || matched.reason || fallback.note || ''
+    };
+  });
+
+  return {
+    raw_analysis: analyzeData?.analysis || '',
+    summary: source.summary || source.medical_necessity || 'AI analysis completed.',
+    medical_necessity: source.medical_necessity || '',
+    missing_elements: Array.isArray(source.missing_elements) ? source.missing_elements : [],
+    approval_likelihood: normalizeLikelihood(source.approval_likelihood, normalizedResults),
+    criteria: normalizedResults
+  };
+}
+
 async function saveSettings() {
   const key      = document.getElementById('settings-api-key').value.trim();
   const practice = document.getElementById('settings-practice').value.trim();
   const provider = document.getElementById('settings-provider').value.trim();
   const npi      = document.getElementById('settings-npi').value.trim();
   const alert    = document.getElementById('settings-status-alert');
-  try {
-    const res = await fetch(BACKEND + '/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, practice_name: practice, provider_name: provider, npi })
-    });
-    if (res.ok) {
-      alert.className = 'alert success';
-      alert.innerHTML = '✅ Settings saved! Refreshing connection...';
-      document.getElementById('settings-api-key').value = '';
-      setTimeout(checkBackend, 800);
-    } else {
-      alert.className = 'alert warning';
-      alert.innerHTML = '❌ Could not save — is the backend server running?';
-    }
-  } catch {
-    alert.className = 'alert warning';
-    alert.innerHTML = '❌ Backend server not reachable. Start it first by running <strong>START_SERVER.bat</strong> in the SpinePA_Backend folder.';
-  }
+
+  if (!alert) return;
+
+  alert.className = 'alert info';
+  alert.innerHTML = `ℹ️ <strong>This deployment does not expose a <code>/settings</code> save endpoint.</strong><br>
+  Update these values in your Vercel environment variables instead, then redeploy:<br>
+  <code>ANTHROPIC_API_KEY</code>, <code>PRACTICE_NAME</code>, <code>PROVIDER_NAME</code>, <code>PROVIDER_NPI</code> or <code>PROVIDER_NPI_*</code>.<br><br>
+  Preview only:<br>
+  Practice: <strong>${practice || '—'}</strong><br>
+  Provider: <strong>${provider || '—'}</strong><br>
+  NPI: <strong>${npi || '—'}</strong><br>
+  API key entered: <strong>${key ? 'Yes (not saved by frontend)' : 'No'}</strong>`;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -866,13 +955,12 @@ function showAIResults(analyzeData, letter, meta) {
   document.getElementById('step-processing').style.display='none';
   document.getElementById('step-results').style.display='block';
 
-  const results      = analyzeData.criteria || [];
+  const results      = Array.isArray(analyzeData.criteria) ? analyzeData.criteria : [];
   const likelihood   = analyzeData.approval_likelihood || 'moderate';
-  const summary      = analyzeData.summary || '';
+  const summary      = analyzeData.summary || analyzeData.medical_necessity || '';
   const metCount     = results.filter(r => r.status === 'met').length;
   const missingReq   = results.filter(r => r.status === 'missing' && r.required);
 
-  // Alert banner
   const alertEl = document.getElementById('approval-alert');
   if (likelihood === 'high') {
     alertEl.innerHTML = `<div class="alert success">🤖 <strong>AI Assessment: High Approval Probability.</strong> ${summary}</div>`;
@@ -882,34 +970,35 @@ function showAIResults(analyzeData, letter, meta) {
     alertEl.innerHTML = `<div class="alert" style="background:#FFEBEE;border:1px solid #F5A0A0;color:#C0392B;">🤖 <strong>AI Assessment: Low Approval Probability.</strong> ${summary}</div>`;
   }
 
-  // Criteria list
   const cl = document.getElementById('criteria-results');
   cl.innerHTML = '';
   results.forEach(r => {
-    const icon = r.status==='met' ? '✅' : (r.required ? '⚠️' : '❌');
+    const icon = r.status === 'met' ? '✅' : (r.required ? '⚠️' : '❌');
     cl.innerHTML += `<div class="criteria-item ${r.status}">
       <div class="criteria-icon">${icon}</div>
       <div class="criteria-text">
         <div class="criteria-label">${r.label}</div>
-        <div class="criteria-note">${r.note || (r.status==='met' ? 'Documented' : r.required ? 'May be missing — add to notes if applicable' : 'Not documented')}</div>
+        <div class="criteria-note">${r.note || (r.status === 'met' ? 'Documented' : r.required ? 'May be missing — add to notes if applicable' : 'Not documented')}</div>
       </div>
     </div>`;
   });
 
-  // Summary panel
+  if (analyzeData.missing_elements && analyzeData.missing_elements.length) {
+    cl.innerHTML += `<div class="alert warning" style="margin-top:12px;"><strong>AI flagged missing elements:</strong> ${analyzeData.missing_elements.join('; ')}</div>`;
+  }
+
   const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'ESI (CPT 62323/64483)', fusion:'Lumbar Fusion (CPT 22612)', pt:'PT Extension (CPT 97110)' };
   const likeColor = { high:'var(--green)', moderate:'var(--amber)', low:'var(--red)' };
   document.getElementById('pa-summary').innerHTML = `
     <table style="width:100%;font-size:13px;border-collapse:collapse;">
-      <tr><td style="padding:7px 0;color:var(--muted);width:50%">Patient</td><td style="font-weight:600">${meta.fname} ${meta.lname}</td></tr>
-      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Procedure</td><td style="font-weight:600;border-top:1px solid var(--border)">${procLabels[meta.procType]||meta.procType}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);width:50%">Patient</td><td style="font-weight:600">${meta.patient || `${meta.fname || ''} ${meta.lname || ''}`.trim()}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Procedure</td><td style="font-weight:600;border-top:1px solid var(--border)">${procLabels[meta.procType] || meta.procType}</td></tr>
       <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${meta.payer}</td></tr>
       <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Diagnosis</td><td style="font-weight:600;border-top:1px solid var(--border)">${meta.icd}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Ordering Provider</td><td style="font-weight:600;border-top:1px solid var(--border)">${meta.provider || '—'}${meta.providerNpi ? ` (NPI: ${meta.providerNpi})` : ''}</td></tr>
       <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Criteria Met</td><td style="font-weight:600;border-top:1px solid var(--border);color:${metCount===results.length?'var(--green)':'var(--amber)'}">${metCount} / ${results.length}</td></tr>
       <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">AI Approval Likelihood</td>
-        <td style="font-weight:700;border-top:1px solid var(--border);color:${likeColor[likelihood]||'var(--amber)'}">
-          ${likelihood.toUpperCase()} ${likelihood==='high'?'✅':likelihood==='moderate'?'⚠️':'❌'}
-        </td>
+        <td style="font-weight:700;border-top:1px solid var(--border);color:${likeColor[likelihood]||'var(--amber)'}">${likelihood.toUpperCase()} ${likelihood==='high'?'✅':likelihood==='moderate'?'⚠️':'❌'}</td>
       </tr>
       <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Mode</td><td style="font-weight:600;border-top:1px solid var(--border);color:var(--green)">🤖 AI Generated</td></tr>
     </table>`;
@@ -926,7 +1015,12 @@ function showResults() {
   const icd = document.getElementById('proc-icd').value;
   const pain = document.getElementById('proc-pain').value;
   const duration = document.getElementById('proc-duration').value;
-  const provider = document.getElementById('pt-provider').value || 'Treating Physician';
+  const provider = document.getElementById('ordering-provider').value || document.getElementById('pt-provider').value || 'Treating Physician';
+  const providerNpi = document.getElementById('provider-npi').value || '';
+  const dob = document.getElementById('pt-dob').value;
+  const memberId = document.getElementById('pt-memberid').value;
+  const referringProvider = document.getElementById('pt-provider').value || '';
+  const patient = getPatientFullName();
 
   const results = analyzeNotes(notes, procType);
   const metCount = results.filter(r=>r.status==='met').length;
@@ -978,10 +1072,10 @@ function showResults() {
     </table>`;
 
   // Generate letter
-  document.getElementById('pa-letter').textContent = generateLetter({ fname, lname, payer, icd, procType, pain, duration, provider, notes, results });
+  document.getElementById('pa-letter').textContent = generateLetter({ fname, lname, patient, payer, icd, procType, pain, duration, provider, providerNpi, dob, memberId, referringProvider, notes, results });
 }
 
-function generateLetter({ fname, lname, payer, icd, procType, pain, duration, provider, notes, results }) {
+function generateLetter({ fname, lname, patient, payer, icd, procType, pain, duration, provider, providerNpi, dob, memberId, referringProvider, notes, results }) {
   const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
   const procLabels = { mri:'Lumbar Magnetic Resonance Imaging (MRI)', esi:'Lumbar Epidural Steroid Injection', fusion:'Lumbar Spinal Fusion Surgery', pt:'Physical Therapy (Extended Course)' };
   const cptCodes = { mri:'CPT 72148', esi:'CPT 62323 / CPT 64483', fusion:'CPT 22612', pt:'CPT 97110' };
@@ -1006,11 +1100,14 @@ Prior Authorization Department
 ${payer}
 
 Re: Prior Authorization Request
-Patient Name: ${fname} ${lname}
+Patient Name: ${patient || `${fname} ${lname}`.trim()}
+Date of Birth: ${dob || '[DOB]'}
+Member ID: ${memberId || '[Member ID]'}
 Diagnosis (ICD-10): ${icd}
 Requested Procedure: ${procLabel}
 CPT Code: ${cptCode}
 Requesting Provider: ${provider}
+Referring Provider: ${referringProvider || '[Referring Provider]'}
 
 Dear Prior Authorization Reviewer,
 
@@ -1043,7 +1140,7 @@ ${provider}
 Spine Clinic
 Phone: [Clinic Phone]
 Fax: [Clinic Fax]
-NPI: [Provider NPI]
+NPI: ${providerNpi || '[Provider NPI]'}
 
 Attachments:
   • Relevant clinical notes and SOAP documentation
