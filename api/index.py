@@ -1,151 +1,495 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from __future__ import annotations
+
+import json
+import os
+import re
+from pathlib import Path
 from datetime import date
 
-app = Flask(__name__)
+import anthropic
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+PUBLIC_DIR = ROOT_DIR / "public"
+
+app = Flask(
+    __name__,
+    static_folder=str(PUBLIC_DIR),
+    static_url_path=""
+)
+
 CORS(app)
 
+CONFIG_FILE = ROOT_DIR / "config.json"
 
-def evaluate_criteria(data):
-    met = 0
-    total = 4
-    details = []
 
-    if data.get("duration"):
-        met += 1
-        details.append({"description": "Symptoms duration documented", "met": True})
+# ------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------
+
+def slug(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", (value or "")).strip("_").upper()
+
+
+def title_from_suffix(suffix: str) -> str:
+    parts = re.split(r"[_\-\s]+", suffix.strip())
+    return " ".join(p.title() for p in parts if p)
+
+
+def load_providers() -> list[dict]:
+    providers = []
+
+    for key, value in os.environ.items():
+        if key.startswith("PROVIDER_NPI_") and value:
+            suffix = key.replace("PROVIDER_NPI_", "", 1)
+            providers.append(
+                {
+                    "key": slug(suffix),
+                    "name": title_from_suffix(suffix),
+                    "npi": str(value).strip(),
+                }
+            )
+
+    providers.sort(key=lambda x: x["name"].lower())
+    return providers
+
+
+def resolve_npi(provider_name: str, providers: list[dict]) -> str:
+    if os.environ.get("PROVIDER_NPI"):
+        return os.environ["PROVIDER_NPI"].strip()
+
+    wanted = slug(provider_name)
+
+    for provider in providers:
+        if provider["key"] == wanted:
+            return provider["npi"]
+
+    # fallback to last token, e.g. "Dr Truumees" -> "TRUUMEES"
+    parts = (provider_name or "").strip().split()
+    if parts:
+        last = slug(parts[-1])
+        for provider in providers:
+            if provider["key"] == last:
+                return provider["npi"]
+
+    return ""
+
+
+def infer_cpt(proc_type: str) -> str:
+    proc = (proc_type or "").strip().lower()
+
+    mapping = {
+        "mri": "72148",
+        "lumbar mri": "72148",
+        "cervical mri": "72141",
+        "thoracic mri": "72146",
+        "esi": "62323 / 64483",
+        "epidural steroid injection": "62323 / 64483",
+        "fusion": "22612",
+        "lumbar fusion": "22612",
+        "pt": "97110",
+        "physical therapy": "97110",
+    }
+
+    return mapping.get(proc, "")
+
+
+def normalize_diagnosis_and_icd(diagnosis: str) -> tuple[str, str]:
+    """
+    Accepts values like:
+      'M54.5 — Low Back Pain'
+      'M54.5 - Low Back Pain'
+      'Low Back Pain'
+    Returns:
+      (diagnosis_text, icd_code)
+    """
+    raw = (diagnosis or "").strip()
+    if not raw:
+        return "", ""
+
+    match = re.match(r"^\s*([A-Z][0-9A-Z][0-9A-Z](?:\.[0-9A-Z]+)?)\s*[-—:]\s*(.+?)\s*$", raw)
+    if match:
+        icd = match.group(1).strip()
+        diag_text = match.group(2).strip()
+        return diag_text, icd
+
+    # if it just looks like an ICD code
+    if re.match(r"^[A-Z][0-9A-Z][0-9A-Z](?:\.[0-9A-Z]+)?$", raw):
+        return "", raw
+
+    return raw, ""
+
+
+def load_config() -> dict:
+    config = {}
+
+    if CONFIG_FILE.exists():
+        try:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            config = {}
+
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        config["api_key"] = os.environ["ANTHROPIC_API_KEY"].strip()
+
+    if os.environ.get("PRACTICE_NAME"):
+        config["practice_name"] = os.environ["PRACTICE_NAME"].strip()
+
+    if os.environ.get("PROVIDER_NAME"):
+        config["provider_name"] = os.environ["PROVIDER_NAME"].strip()
+
+    if os.environ.get("ANTHROPIC_MODEL"):
+        config["anthropic_model"] = os.environ["ANTHROPIC_MODEL"].strip()
+
+    providers = load_providers()
+    config["providers"] = providers
+
+    default_provider = config.get("provider_name", "")
+    config["npi"] = resolve_npi(default_provider, providers)
+
+    return config
+
+
+
+
+def parse_jsonish(text: str) -> dict:
+    raw = (text or '').strip()
+    if not raw:
+        return {}
+
+    fence = re.search(r"```(?:json)?\s*(.*?)```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if fence:
+        raw = fence.group(1).strip()
+
+    start = raw.find('{')
+    end = raw.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end+1]
+
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def procedure_label(proc_type: str) -> str:
+    mapping = {
+        'mri': 'Lumbar MRI',
+        'lumbar mri': 'Lumbar MRI',
+        'esi': 'Epidural Steroid Injection',
+        'fusion': 'Lumbar Fusion',
+        'pt': 'Physical Therapy Extension',
+    }
+    return mapping.get((proc_type or '').strip().lower(), proc_type or '')
+
+
+def build_portal_helper(data: dict, missing_elements: list[str]) -> dict:
+    notes = data.get('notes', '') or ''
+    payer = data.get('payer', '') or ''
+    patient = data.get('patient', '') or ''
+    provider = data.get('provider', '') or ''
+    required_missing = [str(x).strip() for x in (missing_elements or []) if str(x).strip()]
+
+    attachments = ['Generated PA letter', 'Clinical note / SOAP note']
+    if data.get('member_id'):
+        attachments.append('Insurance demographics / member ID')
+    if data.get('diagnosis'):
+        attachments.append('Diagnosis documentation')
+    if 'mri' in notes.lower() or 'ct' in notes.lower() or data.get('imaging_available'):
+        attachments.append('Relevant imaging report')
+    if 'physical therapy' in notes.lower() or 'pt' in notes.lower() or data.get('pt_completed'):
+        attachments.append('Physical therapy documentation')
+
+    readiness = 'Ready to submit' if not required_missing else ('Needs review' if len(required_missing) <= 2 else 'Incomplete')
+    next_steps = [
+        'Confirm patient demographics and payer details.',
+        'Review generated letter for clinical accuracy.',
+    ]
+    if required_missing:
+        next_steps.append('Add the missing documentation items before portal submission.')
     else:
-        details.append({"description": "Symptoms duration missing", "met": False})
+        next_steps.append('Upload the package to the payer portal and record the confirmation number.')
 
-    if data.get("pain_score"):
-        met += 1
-        details.append({"description": "Pain severity documented", "met": True})
-    else:
-        details.append({"description": "Pain severity missing", "met": False})
+    return {
+        'readiness': readiness,
+        'patient': patient,
+        'payer': payer,
+        'ordering_provider': provider,
+        'missing_required': required_missing,
+        'supportive_gaps': [],
+        'recommended_attachments': sorted(set(attachments)),
+        'next_steps': next_steps,
+    }
 
-    if data.get("diagnosis"):
-        met += 1
-        details.append({"description": "Diagnosis documented", "met": True})
-    else:
-        details.append({"description": "Diagnosis missing", "met": False})
 
-    if data.get("proc_type"):
-        met += 1
-        details.append({"description": "Procedure specified", "met": True})
-    else:
-        details.append({"description": "Procedure missing", "met": False})
+def build_package_payload(data: dict, letter: str = '', portal_helper: dict | None = None) -> dict:
+    diagnosis_text, icd_code = normalize_diagnosis_and_icd(data.get('diagnosis', ''))
+    summary = {
+        'patient': data.get('patient', ''),
+        'dob': data.get('dob', ''),
+        'member_id': data.get('member_id', ''),
+        'payer': data.get('payer', ''),
+        'diagnosis_text': diagnosis_text,
+        'icd_10': icd_code,
+        'procedure': procedure_label(data.get('proc_type', '')),
+        'cpt_code': infer_cpt(data.get('proc_type', '')),
+        'pain_score': data.get('pain_score', ''),
+        'duration': data.get('duration', ''),
+        'ordering_provider': data.get('provider', ''),
+        'provider_npi': data.get('provider_npi', ''),
+        'referring_provider': data.get('referring_provider', ''),
+    }
+    return {
+        'clinical_summary': summary,
+        'portal_helper': portal_helper or build_portal_helper(data, []),
+        'letter': letter or data.get('letter', ''),
+        'case_payload': data,
+    }
 
-    return met, total, details
+# ------------------------------------------------------------
+# Static UI
+# ------------------------------------------------------------
 
+@app.route("/")
+def home():
+    return send_from_directory(PUBLIC_DIR, "index.html")
+
+
+@app.route("/<path:path>")
+def static_files(path: str):
+    target = PUBLIC_DIR / path
+
+    if target.exists():
+        return send_from_directory(PUBLIC_DIR, path)
+
+    return jsonify({"error": "Not found"}), 404
+
+
+# ------------------------------------------------------------
+# Status endpoint
+# ------------------------------------------------------------
+
+@app.route("/status")
+def status():
+    config = load_config()
+
+    return jsonify(
+        {
+            "running": True,
+            "has_api_key": bool(config.get("api_key")),
+            "practice_name": config.get("practice_name", ""),
+            "provider_name": config.get("provider_name", ""),
+            "npi": config.get("npi", ""),
+            "providers": config.get("providers", []),
+        }
+    )
+
+
+# ------------------------------------------------------------
+# AI Analysis
+# ------------------------------------------------------------
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    config = load_config()
+    api_key = config.get("api_key")
 
-    data = request.json
+    if not api_key:
+        return jsonify({"error": "Missing ANTHROPIC_API_KEY"}), 400
 
-    met, total, details = evaluate_criteria(data)
+    data = request.json or {}
 
-    probability = "Moderate"
-    if met >= 3:
-        probability = "High"
-    elif met <= 1:
-        probability = "Low"
+    notes = data.get("notes", "")
+    proc_type = data.get("proc_type", "")
+    patient = data.get("patient", "")
+    payer = data.get("payer", "")
+    diagnosis = data.get("diagnosis", "")
+    provider = data.get("provider", "")
+    provider_npi = data.get("provider_npi", "")
+    pain_score = data.get("pain_score", "")
+    duration = data.get("duration", "")
 
-    portal_helper = {
-        "status": "Ready" if met >= 3 else "Needs Documentation",
-        "missing": [d["description"] for d in details if not d["met"]],
-        "attachments": [
-            "Clinical notes",
-            "Prior imaging report",
-            "Physical therapy documentation"
-        ]
-    }
+    cpt_code = infer_cpt(proc_type)
+    diagnosis_text, icd_code = normalize_diagnosis_and_icd(diagnosis)
 
-    return jsonify({
-        "mode": "AI",
-        "criteria_met": met,
-        "criteria_total": total,
-        "criteria_details": details,
-        "approval_probability": probability,
-        "portal_helper": portal_helper
-    })
+    prompt = f"""
+You are a medical prior authorization specialist.
 
+Analyze the following request and determine whether it likely meets payer criteria.
+
+PATIENT
+Name: {patient}
+Payer: {payer}
+
+PROVIDER
+Ordering Provider: {provider}
+Provider NPI: {provider_npi}
+
+REQUESTED SERVICE
+Procedure: {proc_type}
+CPT Code: {cpt_code}
+Diagnosis: {diagnosis_text}
+ICD-10: {icd_code}
+Pain Score: {pain_score}
+Duration of Symptoms: {duration}
+
+CLINICAL NOTES
+{notes}
+
+Return a structured response in JSON with:
+- summary
+- medical_necessity
+- approval_likelihood
+- missing_elements
+"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        model_name = config.get("anthropic_model") or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=1400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        result = response.content[0].text
+        structured = parse_jsonish(result)
+        missing = structured.get('missing_elements', []) if isinstance(structured, dict) else []
+        portal_helper = build_portal_helper(data, missing if isinstance(missing, list) else [])
+        return jsonify({
+            "analysis": result,
+            "structured": structured,
+            "portal_helper": portal_helper,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ------------------------------------------------------------
+# Generate Authorization Letter
+# ------------------------------------------------------------
 
 @app.route("/generate-letter", methods=["POST"])
 def generate_letter():
+    config = load_config()
+    api_key = config.get("api_key")
 
-    data = request.json
+    if not api_key:
+        return jsonify({"error": "Missing ANTHROPIC_API_KEY"}), 400
 
+    providers = config.get("providers", [])
+    data = request.json or {}
+
+    # structured fields from frontend
+    notes = data.get("notes", "")
+    payer = data.get("payer", "")
+    patient = data.get("patient", "")
+    dob = data.get("dob", "")
+    member_id = data.get("member_id", "")
+    diagnosis_raw = data.get("diagnosis", "")
+    proc_type = data.get("proc_type", "")
+    pain_score = data.get("pain_score", "")
+    duration = data.get("duration", "")
+    referring_provider = data.get("referring_provider", "")
+
+    provider = (data.get("provider") or config.get("provider_name") or "Treating Physician").strip()
+    provider_npi = (data.get("provider_npi") or resolve_npi(provider, providers) or config.get("npi", "")).strip()
+
+    cpt_code = infer_cpt(proc_type)
+    diagnosis_text, icd_code = normalize_diagnosis_and_icd(diagnosis_raw)
+
+    practice_name = config.get("practice_name", "Spine Clinic")
     today = date.today().strftime("%B %d, %Y")
 
-    letter = f"""
-# PRIOR AUTHORIZATION REQUEST LETTER
+    prompt = f"""
+Write a professional prior authorization request letter.
+
+Use a formal insurance authorization letter format.
 
 DATE: {today}
 
-TO: {data.get("insurance")}
-
-FROM: {data.get("provider")} | NPI: {data.get("provider_npi")}
-Ascension Texas Spine and Scoliosis
-
-RE: Prior Authorization Request – {data.get("proc_type")}
-
 PATIENT INFORMATION
+Patient Name: {patient}
+Date of Birth: {dob}
+Insurance / Payer: {payer}
+Member ID: {member_id}
 
-Patient Name: {data.get("patient_name")}
-DOB: {data.get("dob")}
-Member ID: {data.get("member_id")}
+PROVIDER INFORMATION
+Ordering Provider: {provider}
+Provider NPI: {provider_npi}
+Referring Provider: {referring_provider}
+Practice Name: {practice_name}
 
-CLINICAL SUMMARY
+REQUESTED SERVICE
+Procedure Requested: {proc_type}
+CPT Code: {cpt_code}
+Diagnosis: {diagnosis_text}
+ICD-10 Code: {icd_code}
+Pain Score: {pain_score}
+Duration of Symptoms: {duration}
 
-Patient presents with pain score {data.get("pain_score")} with symptom duration of {data.get("duration")}.
+CLINICAL NOTES
+{notes}
 
-Diagnosis: {data.get("diagnosis")}
+Write the letter with these sections:
+1. Patient Information
+2. Clinical Summary
+3. Medical Necessity
+4. Requested Procedure and Coding
+5. Closing Request / Conclusion
 
-MEDICAL NECESSITY
-
-Patient has persistent symptoms despite conservative management.
-
-Requested Procedure: {data.get("proc_type")}
-
-Ordering Provider: {data.get("provider")}
-NPI: {data.get("provider_npi")}
-
-Respectfully,
-
-{data.get("provider")}
+Important instructions:
+- Do not invent missing patient facts.
+- Use the structured fields provided above exactly when available.
+- Use the clinical notes to support medical necessity.
+- Make the letter persuasive, clean, and professional.
+- Include provider name and NPI in the letter body.
 """
 
-    return jsonify({
-        "letter": letter
-    })
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        model_name = config.get("anthropic_model") or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=2200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        letter_text = response.content[0].text
+        package_preview = build_package_payload(
+            {**data, 'provider': provider, 'provider_npi': provider_npi},
+            letter=letter_text,
+        )
+        return jsonify(
+            {
+                "letter": letter_text,
+                "provider": provider,
+                "provider_npi": provider_npi,
+                "cpt_code": cpt_code,
+                "icd_10": icd_code,
+                "package_preview": package_preview,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ------------------------------------------------------------
+# Export submission package
+# ------------------------------------------------------------
 
 @app.route("/build-package", methods=["POST"])
 def build_package():
-
-    data = request.json
-
-    package = {
-        "clinical_summary": {
-            "patient": data.get("patient_name"),
-            "dob": data.get("dob"),
-            "diagnosis": data.get("diagnosis"),
-            "procedure": data.get("proc_type"),
-            "pain_score": data.get("pain_score"),
-            "duration": data.get("duration")
-        },
-        "submission_checklist": [
-            "Prior auth letter",
-            "Clinical documentation",
-            "Imaging report",
-            "Insurance member ID"
-        ],
-        "case_payload": data
-    }
-
-    return jsonify(package)
+    data = request.json or {}
+    portal_helper = data.get('portal_helper') if isinstance(data.get('portal_helper'), dict) else build_portal_helper(data, [])
+    payload = build_package_payload(data, letter=data.get('letter', ''), portal_helper=portal_helper)
+    return jsonify(payload)
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
