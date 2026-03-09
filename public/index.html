@@ -88,6 +88,7 @@
   .status-pill.denied { background: #FFEBEE; color: #C0392B; }
   .status-pill.submitted { background: #E3F2FD; color: #1565C0; }
   .status-pill.draft { background: #F3E5F5; color: #6A1B9A; }
+  .status-pill.ready { background: #E8F5E9; color: #2E7D32; }
 
   /* ── Steps ── */
   .steps { display: flex; gap: 0; margin-bottom: 28px; }
@@ -414,10 +415,11 @@ Example: Patient is a 52-year-old male presenting with a 3-month history of low 
           <div class="action-row" style="justify-content:space-between;margin-top:16px;">
             <div style="display:flex;gap:10px;">
               <button class="btn btn-secondary" onclick="copyLetter()">📋 Copy Letter</button>
-              <button class="btn btn-outline" onclick="exportPackage()">📦 Export Package</button>
+              <button class="btn btn-outline" onclick="exportLetterWord()">📝 Export Letter (Word)</button>
+              <button class="btn btn-outline" onclick="exportPackagePdf()">📦 Export Package (PDF)</button>
               <button class="btn btn-secondary" onclick="backToStep1()">🔄 New PA</button>
             </div>
-            <button class="btn btn-primary" onclick="submitPA()">✅ Approve &amp; Submit to Payer →</button>
+            <button class="btn btn-primary" onclick="submitPA()">✅ Mark Ready for Manual Submission →</button>
           </div>
         </div>
       </div>
@@ -708,7 +710,7 @@ function buildPortalHelper(caseData, results, likelihood, aiMissing) {
   if (caseData.pt_completed && !/^select/i.test(caseData.pt_completed)) attachments.push('Physical therapy documentation');
   if ((caseData.medications_tried || []).length) attachments.push('Medication trial history');
   attachments.push('Generated PA letter');
-  const readiness = combinedMissing.length === 0 ? 'Ready to submit' : (combinedMissing.length <= 2 ? 'Needs review' : 'Incomplete');
+  const readiness = combinedMissing.length === 0 ? 'Ready for manual submission' : (combinedMissing.length <= 2 ? 'Needs review' : 'Incomplete');
   return {
     readiness,
     likelihood,
@@ -724,7 +726,7 @@ function buildPortalHelper(caseData, results, likelihood, aiMissing) {
 function renderPortalHelper(helper) {
   const el = document.getElementById('portal-helper');
   if (!el || !helper) return;
-  const readinessColor = helper.readiness === 'Ready to submit' ? 'var(--green)' : (helper.readiness === 'Needs review' ? 'var(--amber)' : 'var(--red)');
+  const readinessColor = helper.readiness === 'Ready for manual submission' ? 'var(--green)' : (helper.readiness === 'Needs review' ? 'var(--amber)' : 'var(--red)');
   const renderList = (items, emptyText) => items && items.length
     ? `<ul style="margin:6px 0 0 18px;line-height:1.8;font-size:13px;color:var(--text);">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`
     : `<div style="font-size:13px;color:var(--muted);margin-top:6px;">${emptyText}</div>`;
@@ -732,7 +734,7 @@ function renderPortalHelper(helper) {
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;">
-        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Submission readiness</div>
+        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Manual submission readiness</div>
         <div style="font-size:22px;font-weight:700;color:${readinessColor};margin-top:6px;">${escapeHtml(helper.readiness)}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:6px;">Approval signal: ${escapeHtml(String(helper.likelihood || '').toUpperCase())}</div>
       </div>
@@ -757,8 +759,8 @@ function renderPortalHelper(helper) {
     </div>`;
 }
 
-function downloadTextFile(filename, content) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+function downloadBlob(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -769,12 +771,81 @@ function downloadTextFile(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-async function exportPackage() {
-  if (!currentCaseData || !currentGeneratedLetter) {
-    alert('Run an analysis first so the package can be generated.');
-    return;
-  }
+function buildPackageHtml(pkg) {
+  const summary = pkg.clinical_summary || {};
+  const helper = pkg.portal_helper || {};
+  const list = (items) => (items && items.length)
+    ? `<ul>${items.map(item => `<li>${escapeHtml(String(item))}</li>`).join('')}</ul>`
+    : '<p>None.</p>';
 
+  const summaryRows = [
+    ['Patient', summary.patient || ''],
+    ['DOB', summary.dob || ''],
+    ['Member ID', summary.member_id || ''],
+    ['Payer', summary.payer || ''],
+    ['Diagnosis', summary.diagnosis_text || summary.diagnosis || ''],
+    ['ICD-10', summary.icd_10 || ''],
+    ['Procedure', summary.procedure || ''],
+    ['CPT Code', summary.cpt_code || ''],
+    ['Pain Score', summary.pain_score || ''],
+    ['Duration', summary.duration || ''],
+    ['Ordering Provider', summary.ordering_provider || ''],
+    ['Provider NPI', summary.provider_npi || '']
+  ].map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(value || ''))}</td></tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PA Submission Package</title>
+<style>
+body { font-family: Arial, sans-serif; color: #1A202C; margin: 32px; }
+h1,h2 { color: #1B3A6B; margin-bottom: 10px; }
+section { margin-bottom: 24px; page-break-inside: avoid; }
+table { width: 100%; border-collapse: collapse; }
+td, th { border: 1px solid #D9E2EC; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #F0F4F8; }
+ul { margin: 8px 0 0 18px; }
+.prewrap { white-space: pre-wrap; border: 1px solid #D9E2EC; padding: 14px; background: #FAFBFC; border-radius: 8px; }
+.small { color: #64748B; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Prior Authorization Submission Package</h1>
+<div class="small">Generated ${new Date().toLocaleString()}</div>
+<section>
+  <h2>Clinical Summary</h2>
+  <table><tbody>${summaryRows}</tbody></table>
+</section>
+<section>
+  <h2>Portal Helper</h2>
+  <p><strong>Manual submission readiness:</strong> ${escapeHtml(helper.readiness || '')}</p>
+  <p><strong>Recommended attachments</strong></p>
+  ${list(helper.recommended_attachments)}
+  <p><strong>Missing required items</strong></p>
+  ${list(helper.missing_required)}
+  <p><strong>Supportive gaps</strong></p>
+  ${list(helper.supportive_gaps)}
+  <p><strong>Next steps</strong></p>
+  ${list(helper.next_steps)}
+</section>
+<section>
+  <h2>Generated PA Letter</h2>
+  <div class="prewrap">${escapeHtml(pkg.letter || '')}</div>
+</section>
+</body>
+</html>`;
+}
+
+function buildLetterWordHtml(letterText) {
+  return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head><meta charset="UTF-8"><title>PA Letter</title>
+<style>body{font-family:Calibri,Arial,sans-serif;margin:36px;color:#1A202C;} .prewrap{white-space:pre-wrap;line-height:1.5;}</style>
+</head><body><div class="prewrap">${escapeHtml(letterText || '')}</div></body></html>`;
+}
+
+async function fetchPackageData() {
   const fallbackPackage = {
     clinical_summary: {
       patient: currentCaseData.patient,
@@ -785,7 +856,7 @@ async function exportPackage() {
       procedure: currentCaseData.proc_type,
       pain_score: currentCaseData.pain_score,
       duration: currentCaseData.duration,
-      provider: currentCaseData.provider,
+      ordering_provider: currentCaseData.provider,
       provider_npi: currentCaseData.provider_npi,
     },
     portal_helper: currentPortalHelper,
@@ -803,14 +874,40 @@ async function exportPackage() {
     const data = await res.json();
     if (res.ok) pkg = data;
   } catch (e) {}
+  return pkg;
+}
 
+async function exportLetterWord() {
+  if (!currentCaseData || !currentGeneratedLetter) {
+    alert('Run an analysis first so the letter can be exported.');
+    return;
+  }
   const stamp = new Date().toISOString().slice(0,10);
   const safeName = (currentCaseData.patient || 'patient').replace(/[^a-z0-9]+/gi, '_');
-  downloadTextFile(`${safeName}_PA_letter_${stamp}.txt`, pkg.letter || currentGeneratedLetter);
-  downloadTextFile(`${safeName}_clinical_summary_${stamp}.txt`, JSON.stringify(pkg.clinical_summary || fallbackPackage.clinical_summary, null, 2));
-  downloadTextFile(`${safeName}_portal_helper_${stamp}.txt`, JSON.stringify(pkg.portal_helper || currentPortalHelper, null, 2));
-  downloadTextFile(`${safeName}_case_payload_${stamp}.json`, JSON.stringify(pkg.case_payload || currentCaseData, null, 2));
-  alert('📦 Submission package exported. Four files were downloaded for manual payer portal upload.');
+  const wordHtml = buildLetterWordHtml(currentGeneratedLetter);
+  downloadBlob(`${safeName}_PA_letter_${stamp}.doc`, wordHtml, 'application/msword');
+  alert('📝 Word-compatible PA letter downloaded. You can open and edit it in Microsoft Word.');
+}
+
+async function exportPackagePdf() {
+  if (!currentCaseData || !currentGeneratedLetter) {
+    alert('Run an analysis first so the package can be generated.');
+    return;
+  }
+  const pkg = await fetchPackageData();
+  const html = buildPackageHtml(pkg);
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow pop-ups so the PDF package can open.');
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 400);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1284,11 +1381,11 @@ function submitPA() {
   const proc = document.getElementById('proc-type').value;
   const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'ESI (CPT 62323)', fusion:'Lumbar Fusion (CPT 22612)', pt:'PT Extension (CPT 97110)' };
   const payer = document.getElementById('pt-payer').value;
-  paQueue.unshift({ name, proc: procLabels[proc], payer, date: new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}), status:'submitted' });
+  paQueue.unshift({ name, proc: procLabels[proc], payer, date: new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}), status:'ready' });
   document.getElementById('queue-badge').textContent = paQueue.filter(p=>p.status==='draft').length;
   document.getElementById('pending-count').textContent = paQueue.filter(p=>p.status==='draft').length;
   renderQueue();
-  alert('✅ PA marked as submitted!\n\nIn the full version with payer integration, this would automatically submit to ' + payer + ' and track the response.\n\nFor now: copy the letter above and submit via your payer portal or fax.');
+  alert('✅ PA marked as ready for manual submission.\n\nNo documents were sent electronically to ' + payer + '.\n\nNext step: export the PDF package and/or Word letter, then upload or fax them manually to the payer.');
   showView('queue');
 }
 
@@ -1305,7 +1402,7 @@ function renderQueue() {
       <td>${p.proc}</td>
       <td>${p.payer}</td>
       <td>${p.date}</td>
-      <td><span class="status-pill ${p.status}">${{draft:'Draft Ready',submitted:'Submitted',approved:'Approved',denied:'Denied'}[p.status]||p.status}</span></td>
+      <td><span class="status-pill ${p.status}">${{draft:'Draft Ready',ready:'Ready for Submission',submitted:'Submitted',approved:'Approved',denied:'Denied'}[p.status]||p.status}</span></td>
       <td><button class="btn btn-outline" style="padding:5px 10px;font-size:12px;" onclick="alert('Full review panel coming in v2!')">Review</button></td>
     </tr>`).join('');
 }

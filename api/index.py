@@ -202,7 +202,7 @@ def build_portal_helper(data: dict, missing_elements: list[str]) -> dict:
     if 'physical therapy' in notes.lower() or 'pt' in notes.lower() or data.get('pt_completed'):
         attachments.append('Physical therapy documentation')
 
-    readiness = 'Ready to submit' if not required_missing else ('Needs review' if len(required_missing) <= 2 else 'Incomplete')
+    readiness = 'Ready for manual submission' if not required_missing else ('Needs review' if len(required_missing) <= 2 else 'Incomplete')
     next_steps = [
         'Confirm patient demographics and payer details.',
         'Review generated letter for clinical accuracy.',
@@ -210,7 +210,7 @@ def build_portal_helper(data: dict, missing_elements: list[str]) -> dict:
     if required_missing:
         next_steps.append('Add the missing documentation items before portal submission.')
     else:
-        next_steps.append('Upload the package to the payer portal and record the confirmation number.')
+        next_steps.append('Upload the package manually to the payer portal or send by fax, then record the confirmation number.')
 
     return {
         'readiness': readiness,
@@ -232,6 +232,7 @@ def build_package_payload(data: dict, letter: str = '', portal_helper: dict | No
         'member_id': data.get('member_id', ''),
         'payer': data.get('payer', ''),
         'diagnosis_text': diagnosis_text,
+        'diagnosis': data.get('diagnosis', ''),
         'icd_10': icd_code,
         'procedure': procedure_label(data.get('proc_type', '')),
         'cpt_code': infer_cpt(data.get('proc_type', '')),
