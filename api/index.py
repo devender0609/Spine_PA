@@ -174,6 +174,26 @@ def parse_jsonish(text: str) -> dict:
         return {}
 
 
+
+
+def normalize_display_text(value) -> str:
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return '; '.join(filter(None, [normalize_display_text(v) for v in value]))
+    if isinstance(value, dict):
+        for key in ['summary', 'label', 'title', 'text', 'description', 'item', 'name', 'reason', 'missing']:
+            if key in value and value.get(key):
+                text = normalize_display_text(value.get(key))
+                if text:
+                    return text
+        return ' — '.join(filter(None, [normalize_display_text(v) for v in value.values()]))
+    return str(value).strip()
+
 def procedure_label(proc_type: str) -> str:
     mapping = {
         'mri': 'Lumbar MRI',
@@ -190,7 +210,7 @@ def build_portal_helper(data: dict, missing_elements: list[str]) -> dict:
     payer = data.get('payer', '') or ''
     patient = data.get('patient', '') or ''
     provider = data.get('provider', '') or ''
-    required_missing = [str(x).strip() for x in (missing_elements or []) if str(x).strip()]
+    required_missing = [normalize_display_text(x) for x in (missing_elements or []) if normalize_display_text(x)]
 
     attachments = ['Generated PA letter', 'Clinical note / SOAP note']
     if data.get('member_id'):
@@ -284,6 +304,7 @@ def status():
             "provider_name": config.get("provider_name", ""),
             "npi": config.get("npi", ""),
             "providers": config.get("providers", []),
+            "mode": "ai" if bool(config.get("api_key")) else "server",
         }
     )
 

@@ -140,6 +140,15 @@
   .dash-name { font-weight: 600; color: var(--navy); }
   .dash-proc { color: var(--muted); font-size: 12px; }
 
+
+  /* ── Modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
+  .modal-overlay.show { display: flex; }
+  .modal-card { width: min(860px, 100%); max-height: 88vh; overflow-y: auto; background: #fff; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 18px 40px rgba(15,23,42,0.18); }
+  .modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-body { padding: 20px; }
+  .modal-close { background: transparent; border: none; font-size: 24px; line-height: 1; cursor: pointer; color: var(--muted); }
+
   /* ── Responsive ── */
   @media(max-width: 768px) {
     .sidebar { display: none; }
@@ -156,12 +165,12 @@
   <div class="sidebar-logo">
     <h1>🦴 SpinePA Agent</h1>
     <p>Prior Authorization Automation</p>
-    <span class="sidebar-badge">DEMO MODE</span>
+    <span id="sidebar-mode-badge" class="sidebar-badge">DEMO MODE</span>
   </div>
   <div class="nav-section">
     <div class="nav-label">Workspace</div>
     <div class="nav-item active" onclick="showView('dashboard')"><span class="icon">📊</span> Dashboard</div>
-    <div class="nav-item" onclick="showView('new-pa')"><span class="icon">➕</span> New PA Request</div>
+    <div class="nav-item" onclick="startNewPA()"><span class="icon">➕</span> New PA Request</div>
     <div class="nav-item" onclick="showView('queue')"><span class="icon">📋</span> PA Queue <span class="nav-badge" id="queue-badge">3</span></div>
   </div>
   <div class="nav-section">
@@ -182,7 +191,7 @@
       <div class="topbar-sub" id="topbar-sub">AI-powered prior authorization for spine care</div>
       <h2 id="topbar-title">Dashboard</h2>
     </div>
-    <button class="btn btn-primary" onclick="showView('new-pa')">➕ New PA Request</button>
+    <button class="btn btn-primary" onclick="startNewPA()">➕ New PA Request</button>
   </div>
 
   <div class="content">
@@ -417,7 +426,7 @@ Example: Patient is a 52-year-old male presenting with a 3-month history of low 
               <button class="btn btn-secondary" onclick="copyLetter()">📋 Copy Letter</button>
               <button class="btn btn-outline" onclick="exportLetterWord()">📝 Export Letter (Word)</button>
               <button class="btn btn-outline" onclick="exportPackagePdf()">📦 Export Package (PDF)</button>
-              <button class="btn btn-secondary" onclick="backToStep1()">🔄 New PA</button>
+              <button class="btn btn-secondary" onclick="startNewPA()">🔄 New PA</button>
             </div>
             <button class="btn btn-primary" onclick="submitPA()">✅ Mark Ready for Manual Submission →</button>
           </div>
@@ -486,6 +495,20 @@ Example: Patient is a 52-year-old male presenting with a 3-month history of low 
   </div><!-- content -->
 </div><!-- main -->
 
+
+<div id="review-modal" class="modal-overlay" onclick="if(event.target===this) closeReviewModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--navy);">PA Review</div>
+        <div id="review-modal-subtitle" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
+      </div>
+      <button class="modal-close" onclick="closeReviewModal()">×</button>
+    </div>
+    <div class="modal-body" id="review-modal-body"></div>
+  </div>
+</div>
+
 <script>
 // ════════════════════════════════════════════════════════════════
 // BACKEND CONNECTION
@@ -506,20 +529,17 @@ async function checkBackend() {
     const data = await res.json();
     AI_MODE = data.has_api_key;
     loadProviderDirectory(data);
-    const chip = document.getElementById('mode-chip');
     const alert = document.getElementById('settings-status-alert');
     if (AI_MODE) {
-      chip.className = 'ai-chip';
-      chip.textContent = '🤖 AI Mode Active';
+      updateModeBadges('ai');
       if (alert) { alert.className = 'alert success'; alert.innerHTML = '✅ <strong>Backend connected and AI mode is active.</strong> The agent is using real Anthropic AI to analyze notes and write letters.'; }
     } else {
-      chip.className = 'ai-chip';
-      chip.style.background = '#E67E22';
-      chip.textContent = '🔌 Server Connected';
+      updateModeBadges('server');
       if (alert) { alert.className = 'alert warning'; alert.innerHTML = '🔌 <strong>Backend server is running, but no API key is saved yet.</strong> Paste your Anthropic API key below and click Save Settings to enable AI mode.'; }
     }
   } catch {
     AI_MODE = false;
+    updateModeBadges('demo');
     const alert = document.getElementById('settings-status-alert');
     if (alert) {
       alert.className = 'alert warning';
@@ -654,11 +674,30 @@ const SAMPLE_CASES = {
   },
 };
 
-let paQueue = [
+const DEFAULT_QUEUE = [
   { name:'James Thornton', proc:'Lumbar Fusion (CPT 22612)', payer:'Aetna', date:'03/01/2026', status:'draft' },
   { name:'Maria Santos', proc:'Lumbar MRI (CPT 72148)', payer:'BCBS', date:'03/02/2026', status:'draft' },
   { name:'Robert Kim', proc:'ESI (CPT 62323)', payer:'United', date:'03/03/2026', status:'submitted' },
 ];
+const QUEUE_STORAGE_KEY = 'spinepa_queue_v3';
+
+function loadQueueState() {
+  try {
+    const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length ? parsed : DEFAULT_QUEUE.map(item => ({ ...item }));
+  } catch (e) {
+    return DEFAULT_QUEUE.map(item => ({ ...item }));
+  }
+}
+
+function saveQueueState() {
+  try {
+    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(paQueue));
+  } catch (e) {}
+}
+
+let paQueue = loadQueueState();
 
 let currentCaseData = null;
 let currentPortalHelper = null;
@@ -672,6 +711,168 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function flattenDisplayText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(flattenDisplayText).filter(Boolean).join('; ');
+  if (typeof value === 'object') {
+    const preferred = ['summary', 'label', 'title', 'text', 'description', 'item', 'name', 'reason', 'missing'];
+    for (const key of preferred) {
+      if (value[key]) {
+        const inner = flattenDisplayText(value[key]);
+        if (inner) return inner;
+      }
+    }
+    const combined = Object.values(value).map(flattenDisplayText).filter(Boolean).join(' — ');
+    return combined;
+  }
+  return String(value);
+}
+
+function normalizeMissingList(value) {
+  if (!value) return [];
+  const arr = Array.isArray(value) ? value : [value];
+  return arr.map(flattenDisplayText).map(v => v.trim()).filter(Boolean);
+}
+
+function updateModeBadges(state) {
+  const chip = document.getElementById('mode-chip');
+  const badge = document.getElementById('sidebar-mode-badge');
+  if (!chip || !badge) return;
+
+  if (state === 'ai') {
+    chip.className = 'ai-chip';
+    chip.style.background = '';
+    chip.textContent = '🤖 AI Mode Active';
+    badge.textContent = 'AI MODE';
+    badge.style.background = 'var(--green)';
+  } else if (state === 'server') {
+    chip.className = 'ai-chip';
+    chip.style.background = '#E67E22';
+    chip.textContent = '🔌 Server Connected';
+    badge.textContent = 'SERVER MODE';
+    badge.style.background = 'var(--amber)';
+  } else {
+    chip.className = 'demo-chip';
+    chip.style.background = '';
+    chip.textContent = '⚡ Demo Mode';
+    badge.textContent = 'DEMO MODE';
+    badge.style.background = 'var(--teal)';
+  }
+}
+
+function updateQueueCounters() {
+  const reviewCount = paQueue.filter(p => ['draft','ready'].includes(p.status)).length;
+  const queueBadge = document.getElementById('queue-badge');
+  const pendingCount = document.getElementById('pending-count');
+  if (queueBadge) queueBadge.textContent = reviewCount;
+  if (pendingCount) pendingCount.textContent = reviewCount;
+}
+
+function renderDashboardQueue() {
+  const el = document.getElementById('dashboard-queue');
+  if (!el) return;
+  const topRows = paQueue.slice(0, 3);
+  if (!topRows.length) {
+    el.innerHTML = '<div class="dash-row"><div><div class="dash-name">No active cases</div><div class="dash-proc">Create a new PA request to begin.</div></div></div>';
+    return;
+  }
+  const labels = { draft:'Draft Ready', ready:'Ready for Submission', submitted:'Submitted', approved:'Approved', denied:'Denied' };
+  el.innerHTML = topRows.map(row => `
+    <div class="dash-row">
+      <div>
+        <div class="dash-name">${escapeHtml(row.name || '')}</div>
+        <div class="dash-proc">${escapeHtml(row.proc || '')} · ${escapeHtml(row.payer || '')}</div>
+      </div>
+      <span class="status-pill ${row.status}">${labels[row.status] || escapeHtml(row.status || '')}</span>
+    </div>`).join('');
+}
+
+function closeReviewModal() {
+  const modal = document.getElementById('review-modal');
+  if (modal) modal.classList.remove('show');
+}
+
+function reviewQueueItem(index) {
+  const item = paQueue[index];
+  if (!item) return;
+  const modal = document.getElementById('review-modal');
+  const subtitle = document.getElementById('review-modal-subtitle');
+  const body = document.getElementById('review-modal-body');
+  if (!modal || !subtitle || !body) return;
+
+  subtitle.textContent = `${item.name || ''} · ${item.payer || ''}`;
+  const labels = { draft:'Draft Ready', ready:'Ready for Submission', submitted:'Submitted', approved:'Approved', denied:'Denied' };
+  const helper = item.portal_helper || {};
+  const caseData = item.case_data || {};
+  const helperList = (items, emptyText) => items && items.length
+    ? `<ul style="margin:8px 0 0 18px;line-height:1.7;">${items.map(x => `<li>${escapeHtml(flattenDisplayText(x))}</li>`).join('')}</ul>`
+    : `<div style="margin-top:8px;color:var(--muted);font-size:12px;">${emptyText}</div>`;
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="card" style="margin:0;padding:16px;">
+        <div class="card-title" style="margin-bottom:10px;">📄 Summary</div>
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="padding:6px 0;color:var(--muted);width:42%">Patient</td><td style="font-weight:600">${escapeHtml(item.name || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">Procedure</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(item.proc || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(item.payer || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">Status</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(labels[item.status] || item.status || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">Saved</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(item.date || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">DOB</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(caseData.dob || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:var(--muted);border-top:1px solid var(--border)">Ordering Provider</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(caseData.provider || '')}</td></tr>
+        </table>
+      </div>
+      <div class="card" style="margin:0;padding:16px;">
+        <div class="card-title" style="margin-bottom:10px;">🧭 Portal Helper</div>
+        <div style="font-size:13px;"><strong>Readiness:</strong> ${escapeHtml(helper.readiness || '—')}</div>
+        <div style="font-size:13px;margin-top:10px;"><strong>Missing required items</strong></div>
+        ${helperList(helper.missing_required, 'No required gaps recorded.')}
+        <div style="font-size:13px;margin-top:10px;"><strong>Recommended attachments</strong></div>
+        ${helperList(helper.recommended_attachments, 'No attachment suggestions recorded.')}
+      </div>
+    </div>
+    <div class="card" style="margin:16px 0 0;padding:16px;">
+      <div class="card-title" style="margin-bottom:10px;">📝 Letter Preview</div>
+      <div class="letter-box" style="max-height:340px;">${escapeHtml(item.letter || 'No generated letter saved for this case yet.')}</div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+function resetPAForm() {
+  const idsToClear = ['pt-fname','pt-lname','pt-dob','pt-payer','pt-memberid','pt-provider','proc-type','proc-icd','proc-pain','proc-duration','clinical-notes','pt-completed','imaging-avail','sample-case'];
+  idsToClear.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  });
+  const meds = document.getElementById('meds-tried');
+  if (meds) Array.from(meds.options).forEach(opt => opt.selected = false);
+  const ordering = document.getElementById('ordering-provider');
+  if (ordering && ordering.options.length) ordering.selectedIndex = 0;
+  updateProviderNPI();
+  updateProcDetails();
+  document.getElementById('approval-alert').innerHTML = '';
+  document.getElementById('criteria-results').innerHTML = '';
+  document.getElementById('pa-summary').innerHTML = '';
+  document.getElementById('portal-helper').innerHTML = '';
+  document.getElementById('pa-letter').textContent = '';
+  currentCaseData = null;
+  currentPortalHelper = null;
+  currentGeneratedLetter = '';
+}
+
+function startNewPA() {
+  resetPAForm();
+  document.getElementById('step-form').style.display='block';
+  document.getElementById('step-notes').style.display='none';
+  document.getElementById('step-processing').style.display='none';
+  document.getElementById('step-results').style.display='none';
+  showView('new-pa');
 }
 
 function getCurrentCaseData() {
@@ -702,7 +903,7 @@ function getCurrentCaseData() {
 function buildPortalHelper(caseData, results, likelihood, aiMissing) {
   const missingRequired = results.filter(r => r.status === 'missing' && r.required).map(r => r.label);
   const supportiveGaps = results.filter(r => r.status !== 'met' && !r.required).map(r => r.label);
-  const aiList = Array.isArray(aiMissing) ? aiMissing.filter(Boolean) : [];
+  const aiList = normalizeMissingList(aiMissing);
   const combinedMissing = Array.from(new Set([...missingRequired, ...aiList]));
   const attachments = ['Clinical note / SOAP note'];
   if (caseData.member_id) attachments.push('Insurance member card / demographics');
@@ -927,7 +1128,7 @@ function showView(id) {
     criteria:'Medical necessity criteria reference by procedure',
     settings:'Configure agent settings and integrations'
   }[id] || '';
-  event.currentTarget && event.currentTarget.classList.add('active');
+  if (window.event && event.currentTarget) event.currentTarget.classList.add('active');
   renderQueue();
   if(id==='criteria') showCriteria('mri', document.querySelector('#criteria-tabs button'));
 }
@@ -991,7 +1192,6 @@ function backToStep1() {
   document.getElementById('step-notes').style.display='none';
   document.getElementById('step-processing').style.display='none';
   document.getElementById('step-results').style.display='none';
-  document.getElementById('sample-case').value='';
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1142,7 +1342,7 @@ async function runAIAnalysis() {
     const letterData = await letterRes.json();
     if (!letterRes.ok) throw new Error(letterData.error || 'Letter generation failed');
 
-    const parsedAnalysis = safeJsonParse(analyzeData.analysis) || {};
+    const parsedAnalysis = analyzeData.structured || safeJsonParse(analyzeData.analysis) || {};
     showAIResults(parsedAnalysis, letterData.letter, {
       patient,
       payer,
@@ -1167,10 +1367,8 @@ function showAIResults(aiData, letter, meta) {
 
   const results = Array.isArray(meta.localCriteria) ? meta.localCriteria.map(r => ({ ...r })) : [];
   const likelihood = normalizeLikelihood(aiData.approval_likelihood);
-  const summary = aiData.summary || aiData.medical_necessity || 'AI analysis completed.';
-  const missingElements = Array.isArray(aiData.missing_elements)
-    ? aiData.missing_elements.map(item => String(item).trim()).filter(Boolean)
-    : [];
+  const summary = flattenDisplayText(aiData.summary) || flattenDisplayText(aiData.medical_necessity) || 'AI analysis completed.';
+  const missingElements = normalizeMissingList(aiData.missing_elements);
 
   if (missingElements.length) {
     missingElements.forEach(item => {
@@ -1377,15 +1575,31 @@ function copyLetter() {
 }
 
 function submitPA() {
-  const name = document.getElementById('pt-fname').value + ' ' + document.getElementById('pt-lname').value;
-  const proc = document.getElementById('proc-type').value;
+  const caseData = currentCaseData || getCurrentCaseData();
+  const name = caseData.patient || [caseData.first_name, caseData.last_name].filter(Boolean).join(' ') || 'Unnamed Patient';
+  const proc = caseData.proc_type;
   const procLabels = { mri:'Lumbar MRI (CPT 72148)', esi:'ESI (CPT 62323)', fusion:'Lumbar Fusion (CPT 22612)', pt:'PT Extension (CPT 97110)' };
-  const payer = document.getElementById('pt-payer').value;
-  paQueue.unshift({ name, proc: procLabels[proc], payer, date: new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}), status:'ready' });
-  document.getElementById('queue-badge').textContent = paQueue.filter(p=>p.status==='draft').length;
-  document.getElementById('pending-count').textContent = paQueue.filter(p=>p.status==='draft').length;
+  const payer = caseData.payer || '';
+  const queueItem = {
+    name,
+    proc: procLabels[proc] || proc || 'Procedure',
+    payer,
+    date: new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}),
+    status: 'ready',
+    case_data: caseData,
+    portal_helper: currentPortalHelper,
+    letter: currentGeneratedLetter,
+  };
+  paQueue.unshift(queueItem);
+  saveQueueState();
+  updateQueueCounters();
   renderQueue();
-  alert('✅ PA marked as ready for manual submission.\n\nNo documents were sent electronically to ' + payer + '.\n\nNext step: export the PDF package and/or Word letter, then upload or fax them manually to the payer.');
+  renderDashboardQueue();
+  alert(`✅ PA marked as ready for manual submission.
+
+No documents were sent electronically to ${payer}.
+
+Next step: export the PDF package and/or Word letter, then upload or fax them manually to the payer.`);
   showView('queue');
 }
 
@@ -1396,15 +1610,18 @@ function submitPA() {
 function renderQueue() {
   const tbody = document.getElementById('queue-body');
   if(!tbody) return;
-  tbody.innerHTML = paQueue.map(p => `
+  const labels = {draft:'Draft Ready',ready:'Ready for Submission',submitted:'Submitted',approved:'Approved',denied:'Denied'};
+  tbody.innerHTML = paQueue.map((p, idx) => `
     <tr>
-      <td><strong>${p.name}</strong></td>
-      <td>${p.proc}</td>
-      <td>${p.payer}</td>
-      <td>${p.date}</td>
-      <td><span class="status-pill ${p.status}">${{draft:'Draft Ready',ready:'Ready for Submission',submitted:'Submitted',approved:'Approved',denied:'Denied'}[p.status]||p.status}</span></td>
-      <td><button class="btn btn-outline" style="padding:5px 10px;font-size:12px;" onclick="alert('Full review panel coming in v2!')">Review</button></td>
+      <td><strong>${escapeHtml(p.name || '')}</strong></td>
+      <td>${escapeHtml(p.proc || '')}</td>
+      <td>${escapeHtml(p.payer || '')}</td>
+      <td>${escapeHtml(p.date || '')}</td>
+      <td><span class="status-pill ${escapeHtml(p.status || '')}">${labels[p.status] || escapeHtml(p.status || '')}</span></td>
+      <td><button class="btn btn-outline" style="padding:5px 10px;font-size:12px;" onclick="reviewQueueItem(${idx})">Review</button></td>
     </tr>`).join('');
+  updateQueueCounters();
+  renderDashboardQueue();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1434,7 +1651,9 @@ function showCriteria(type, btn) {
 }
 
 // Init
+updateModeBadges('demo');
 renderQueue();
+renderDashboardQueue();
 showCriteria('mri', document.querySelector('#criteria-tabs button'));
 const orderingProviderEl = document.getElementById('ordering-provider');
 if (orderingProviderEl) orderingProviderEl.addEventListener('change', updateProviderNPI);
