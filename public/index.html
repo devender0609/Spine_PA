@@ -560,6 +560,7 @@ function resetNewPAForm() {
   updateProviderNPI();
   updateProcDetails();
   currentCase = null;
+  try { localStorage.removeItem(CASE_KEY); } catch {}
   ['approval-alert','criteria-results','pa-summary','portal-helper','pa-letter'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; if (el && id === 'pa-letter') el.textContent = ''; });
 }
 
@@ -590,6 +591,59 @@ function formatDate(value) {
   if (!value) return '—';
   const d = new Date(value);
   return isNaN(d) ? String(value) : d.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+}
+
+function collectCaseFromForm() {
+  const fname = (document.getElementById('pt-fname')?.value || '').trim();
+  const lname = (document.getElementById('pt-lname')?.value || '').trim();
+  return {
+    fname,
+    lname,
+    patient: `${fname} ${lname}`.replace(/\s+/g, ' ').trim(),
+    dob: (document.getElementById('pt-dob')?.value || '').trim(),
+    memberId: (document.getElementById('pt-memberid')?.value || '').trim(),
+    payer: (document.getElementById('pt-payer')?.value || '').trim(),
+    referringProvider: (document.getElementById('pt-provider')?.value || '').trim(),
+    procType: (document.getElementById('proc-type')?.value || '').trim(),
+    diagnosis: (document.getElementById('proc-icd')?.value || '').trim(),
+    painScore: (document.getElementById('proc-pain')?.value || '').trim(),
+    duration: (document.getElementById('proc-duration')?.value || '').trim(),
+    notes: (document.getElementById('clinical-notes')?.value || '').trim(),
+    provider: (document.getElementById('ordering-provider')?.value || document.getElementById('pt-provider')?.value || 'Treating Physician').trim(),
+    providerNpi: (document.getElementById('provider-npi')?.value || '').trim()
+  };
+}
+
+function buildDeterministicLetter(baseLetter, formCase, structured) {
+  const procLabels = { mri:'Lumbar Magnetic Resonance Imaging (MRI)', esi:'Lumbar Epidural Steroid Injection', fusion:'Lumbar Spinal Fusion Surgery', pt:'Physical Therapy (Extended Course)' };
+  const cptCodes = { mri:'72148', esi:'62323 / 64483', fusion:'22612', pt:'97110' };
+  const patient = formCase.patient || structured.patient || '[Patient Name Not Provided]';
+  const dob = formCase.dob || structured.dob || '';
+  const payer = formCase.payer || structured.payer || '[Payer Not Provided]';
+  const memberId = formCase.memberId || structured.member_id || '';
+  const provider = formCase.provider || structured.provider || 'Treating Physician';
+  const providerNpi = formCase.providerNpi || structured.provider_npi || '';
+  const referringProvider = formCase.referringProvider || structured.referring_provider || '';
+  const diagnosis = formCase.diagnosis || structured.diagnosis || '[Diagnosis Not Provided]';
+  const procName = procLabels[formCase.procType] || structured.procedure || formCase.procType || 'Requested Procedure';
+  const cpt = cptCodes[formCase.procType] || structured.cpt_code || 'N/A';
+  let text = String(baseLetter || '').trim();
+  if (!text) {
+    text = '# PRIOR AUTHORIZATION REQUEST LETTER';
+  }
+  // remove existing patient information block if present to avoid stale values
+  text = text.replace(/## 1\. PATIENT INFORMATION[\s\S]*?(?=## 2\.|$)/i, '').trim();
+  const patientBlock = `## 1. PATIENT INFORMATION\n\nPatient Name: ${patient}\nDate of Birth: ${formatDate(dob) === '—' ? '[DOB Not Provided]' : formatDate(dob)}\nInsurance / Payer: ${payer}\nMember ID: ${memberId || '[Member ID Not Provided]'}\nOrdering Provider: ${provider}\nProvider NPI: ${providerNpi || '[NPI Not Provided]'}${referringProvider ? `\nReferring Provider: ${referringProvider}` : ''}\n`;
+  if (/## 2\./i.test(text)) {
+    text = text.replace(/(## 2\.)/i, patientBlock + '\n$1');
+  } else {
+    text += '\n\n' + patientBlock;
+  }
+  text = text
+    .replace(/TO:\s.*?(\n|$)/i, `TO: ${payer}\n`)
+    .replace(/RE:\s.*?(\n|$)/i, `RE: Prior Authorization Request – ${procName} (CPT ${cpt})\n`)
+    .replace(/FROM:\s.*?(\n|$)/i, `FROM: ${provider} | NPI: ${providerNpi || '[NPI Not Provided]'}\n`);
+  return text;
 }
 
 function buildPortalHelperHtml(helper) {
@@ -948,20 +1002,11 @@ function normalizeLikelihood(value) {
 }
 
 async function runAIAnalysis() {
-  const notes = document.getElementById('clinical-notes').value.trim();
-  const procType = document.getElementById('proc-type').value;
-  const payer = document.getElementById('pt-payer').value;
-  const fname = document.getElementById('pt-fname').value.trim();
-  const lname = document.getElementById('pt-lname').value.trim();
-  const patient = `${fname} ${lname}`.trim();
-  const dob = document.getElementById('pt-dob').value || '';
-  const memberId = document.getElementById('pt-memberid').value.trim();
-  const referringProvider = document.getElementById('pt-provider').value.trim();
-  const diagnosis = document.getElementById('proc-icd').value;
-  const painScore = document.getElementById('proc-pain').value;
-  const duration = document.getElementById('proc-duration').value;
-  const provider = document.getElementById('ordering-provider').value || referringProvider || 'Treating Physician';
-  const providerNpi = document.getElementById('provider-npi').value || '';
+  const formCase = collectCaseFromForm();
+  const { notes, procType, payer, fname, lname, patient, dob, memberId, referringProvider, diagnosis, painScore, duration, provider, providerNpi } = formCase;
+
+  if (!patient) { alert('Enter patient first and last name before analysis.'); return; }
+  if (!payer) { alert('Select insurance / payer before analysis.'); return; }
 
   document.getElementById('proc-step-text').textContent = '🤖 Claude AI is thinking — this takes 10–20 seconds...';
 
@@ -1015,7 +1060,8 @@ async function runAIAnalysis() {
 
     const parsedAnalysis = safeJsonParse(analyzeData.analysis) || {};
     const helper = analyzeData.portal_helper || parsedAnalysis.portal_helper || {};
-    showAIResults(parsedAnalysis, letterData.letter, {
+    const deterministicLetter = buildDeterministicLetter(letterData.letter, formCase, letterData.structured || {});
+    showAIResults(parsedAnalysis, deterministicLetter, {
       patient,
       dob,
       memberId,
@@ -1118,18 +1164,19 @@ function showAIResults(aiData, letter, meta) {
 }
 
 function showResults() {
-  const procType = document.getElementById('proc-type').value;
-  const notes = document.getElementById('clinical-notes').value;
-  const fname = document.getElementById('pt-fname').value;
-  const lname = document.getElementById('pt-lname').value;
-  const payer = document.getElementById('pt-payer').value;
-  const icd = document.getElementById('proc-icd').value;
-  const pain = document.getElementById('proc-pain').value;
-  const duration = document.getElementById('proc-duration').value;
-  const provider = document.getElementById('ordering-provider').value || document.getElementById('pt-provider').value || 'Treating Physician';
-  const providerNpi = document.getElementById('provider-npi').value || '';
-  const dob = document.getElementById('pt-dob').value || '';
-  const memberId = document.getElementById('pt-memberid').value.trim();
+  const formCase = collectCaseFromForm();
+  const procType = formCase.procType;
+  const notes = formCase.notes;
+  const fname = formCase.fname;
+  const lname = formCase.lname;
+  const payer = formCase.payer;
+  const icd = formCase.diagnosis;
+  const pain = formCase.painScore;
+  const duration = formCase.duration;
+  const provider = formCase.provider;
+  const providerNpi = formCase.providerNpi;
+  const dob = formCase.dob;
+  const memberId = formCase.memberId;
 
   const results = analyzeNotes(notes, procType);
   const metCount = results.filter(r=>r.status==='met').length;
@@ -1192,7 +1239,7 @@ function showResults() {
     next_steps: ['Review missing items and update documentation if needed.', 'Export the letter or package.', 'Upload manually in the payer portal.']
   };
   document.getElementById('portal-helper').innerHTML = buildPortalHelperHtml(helper);
-  const finalLetter = generateLetter({ fname, lname, dob, memberId, payer, icd, procType, pain, duration, provider, providerNpi, notes, results });
+  const finalLetter = buildDeterministicLetter(generateLetter({ fname, lname, dob, memberId, payer, icd, procType, pain, duration, provider, providerNpi, notes, results }), formCase, {});
   document.getElementById('pa-letter').textContent = finalLetter;
   currentCase = { patient: `${fname} ${lname}`.trim(), dob, memberId, payer, diagnosis: icd, procType, provider, providerNpi, notes, criteriaResults: results, portalHelper: helper, letter: finalLetter, createdAt: new Date().toISOString() };
   localStorage.setItem(CASE_KEY, JSON.stringify(currentCase));

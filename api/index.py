@@ -337,7 +337,7 @@ CLINICAL NOTES:
             analysis = {**analysis, **ai_json}
 
     portal_helper = build_portal_helper(data, analysis)
-    return jsonify({"analysis": analysis, "portal_helper": portal_helper})
+    return jsonify({"analysis": analysis, "portal_helper": portal_helper, "echo_input": {"patient": patient, "payer": payer, "diagnosis": diagnosis, "provider": provider, "provider_npi": provider_npi}})
 
 
 @app.route("/generate-letter", methods=["POST"])
@@ -350,7 +350,7 @@ def generate_letter():
     if not data.get("provider_npi"):
         data["provider_npi"] = resolve_npi(data.get("provider", ""), providers) or config.get("npi", "")
     letter, structured = build_structured_letter(data, config.get("practice_name", "Spine Clinic"))
-    return jsonify({"letter": letter, "structured": structured, **structured})
+    return jsonify({"letter": letter, "structured": structured, "echo_input": {"patient": data.get("patient", ""), "payer": data.get("payer", ""), "dob": data.get("dob", ""), "member_id": data.get("member_id", "")}, **structured})
 
 
 @app.route("/build-package", methods=["POST"])
