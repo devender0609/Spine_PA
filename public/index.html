@@ -397,7 +397,6 @@
   }
 
   .status-pill.ready { background: #E3F2FD; color: #1565C0; }
-  .status-pill.review { background: #FFF3E0; color: #E67E22; }
 
   .dash-queue { margin-top: 4px; }
 
@@ -659,7 +658,7 @@
           <div class="form-grid three">
             <div class="field"><label>Patient First Name</label><input id="pt-fname" type="text" placeholder="e.g. John"></div>
             <div class="field"><label>Patient Last Name</label><input id="pt-lname" type="text" placeholder="e.g. Smith"></div>
-            <div class="field"><label>Date of Birth</label><input id="pt-dob" type="date"></div>
+            <div class="field"><label>Date of Birth</label><input id="pt-dob" type="date" max="2099-12-31"></div>
             <div class="field">
               <label>Insurance / Payer</label>
               <select id="pt-payer">
@@ -965,8 +964,8 @@
 
 <script>
 const BACKEND = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : '';
-const QUEUE_KEY = 'spinepa_queue_v4';
-const CASE_KEY = 'spinepa_current_case_v4';
+const QUEUE_KEY = 'spinepa_queue_v5';
+const CASE_KEY = 'spinepa_current_case_v5';
 
 let AI_MODE = false;
 let providerDirectory = [];
@@ -1066,7 +1065,12 @@ function normalizeList(list) {
   if (!Array.isArray(list)) return [];
   return list.map(item => {
     if (typeof item === 'string') return item.trim();
-    if (item && typeof item === 'object') return JSON.stringify(item);
+    if (item && typeof item === 'object') {
+      if (item.element) {
+        return `${item.element}${item.detail ? ': ' + item.detail : ''}`;
+      }
+      return JSON.stringify(item);
+    }
     return String(item || '').trim();
   }).filter(Boolean);
 }
@@ -1077,6 +1081,32 @@ function extractSummaryText(value) {
   if (value.text) return String(value.text);
   if (value.summary) return String(value.summary);
   return JSON.stringify(value);
+}
+
+function validateDOB(dob) {
+  if (!dob) return true;
+
+  const d = new Date(dob);
+  const today = new Date();
+
+  if (Number.isNaN(d.getTime())) {
+    alert('Invalid date of birth.');
+    return false;
+  }
+
+  if (d > today) {
+    alert('Date of birth cannot be in the future.');
+    return false;
+  }
+
+  const minDate = new Date();
+  minDate.setFullYear(today.getFullYear() - 120);
+  if (d < minDate) {
+    alert('Please check DOB. Age appears unrealistic.');
+    return false;
+  }
+
+  return true;
 }
 
 function loadQueue() {
@@ -1300,6 +1330,8 @@ function goToStep2() {
       return;
     }
   }
+  if (!validateDOB(document.getElementById('pt-dob').value)) return;
+
   document.getElementById('step-form').style.display = 'none';
   document.getElementById('step-notes').style.display = 'block';
 }
@@ -1355,6 +1387,8 @@ function runAnalysis() {
     alert('Select insurance / payer before analysis.');
     return;
   }
+
+  if (!validateDOB(formCase.dob)) return;
 
   if (!formCase.notes) {
     const proceed = confirm('No clinical note entered. Generate a draft anyway using the structured form fields?');
@@ -1456,7 +1490,7 @@ async function runAIAnalysis() {
 
     const analysis = (analyzeData.analysis && typeof analyzeData.analysis === 'object') ? analyzeData.analysis : {};
     const helper = analyzeData.portal_helper || {};
-    const finalLetter = buildDeterministicLetter(letterData.letter || '', formCase, letterData.structured || {});
+    const finalLetter = buildDeterministicLetter(letterData.letter || '', formCase);
 
     showResultsFromData(formCase, localCriteria, helper, analysis, finalLetter);
   } catch (err) {
@@ -1471,7 +1505,7 @@ function showResults() {
   const results = analyzeNotes(formCase.notes, formCase.procType);
   const helper = buildPortalHelperFromResults(results);
   const ruleLetter = generateRuleLetter(formCase, results);
-  const finalLetter = buildDeterministicLetter(ruleLetter, formCase, {});
+  const finalLetter = buildDeterministicLetter(ruleLetter, formCase);
   showResultsFromData(formCase, results, helper, {}, finalLetter);
 }
 
@@ -1559,8 +1593,8 @@ function inferLikelihood(results, analysis) {
 }
 
 function buildPortalHelperFromResults(results) {
-  const missing = results.filter(r => r.status === 'missing' && r.required).map(r => r.label);
-  const supportive = results.filter(r => r.status !== 'met' && !r.required).map(r => r.label);
+  const missing = results.filter(r => r.status === 'missing' && r.required).map(r => ({ element: r.label, detail: 'Not clearly documented in the current inputs.' }));
+  const supportive = results.filter(r => r.status !== 'met' && !r.required).map(r => ({ element: r.label, detail: 'Supportive but not clearly documented.' }));
 
   return {
     status: missing.length === 0 ? 'Ready for manual submission' : 'Needs review before manual submission',
@@ -1632,7 +1666,7 @@ function generateRuleLetter(formCase, results) {
     pt:'97110'
   };
 
-  const missing = results.filter(r => r.status === 'missing' && r.required).map(r => r.label);
+  const missing = normalizeList(results.filter(r => r.status === 'missing' && r.required).map(r => ({ element: r.label, detail: 'Documentation may need strengthening.' })));
   const supportive = formCase.notes
     ? formCase.notes
     : `The patient presents with ${formCase.diagnosis || 'the documented condition'} with symptom duration of ${formCase.duration || 'not specified'} and pain score ${formCase.painScore || 'not specified'}/10.`;
@@ -1684,25 +1718,29 @@ Ordering Provider | NPI: ${formCase.providerNpi || '[NPI Not Provided]'}
 Spine Clinic`;
 }
 
-function buildDeterministicLetter(rawLetter, formCase, structured = {}) {
-  let text = String(rawLetter || '').trim();
-  if (!text) text = generateRuleLetter(formCase, formCase.criteriaResults || []);
+function buildDeterministicLetter(rawLetter, formCase) {
+  const patientBlock = `## 1. PATIENT INFORMATION
 
-  const patient = structured.patient || formCase.patient || '';
-  const dob = structured.dob || formatDate(formCase.dob);
-  const memberId = structured.member_id || structured.memberId || formCase.memberId || '';
-  const payer = structured.payer || formCase.payer || '';
-  const provider = structured.provider || formCase.provider || '';
-  const providerNpi = structured.provider_npi || formCase.providerNpi || '';
+Patient Name: ${formCase.patient || '[Patient Name Not Provided]'}
+Date of Birth: ${formatDate(formCase.dob) || '[DOB Not Provided]'}
+Insurance / Payer: ${formCase.payer || '[Payer Not Provided]'}
+Member ID: ${formCase.memberId || '[Member ID Not Provided]'}
+`;
 
-  text = text.replace(/Patient Name:\s*.*/i, `Patient Name: ${patient || '[Patient Name Not Provided]'}`);
-  text = text.replace(/Date of Birth:\s*.*/i, `Date of Birth: ${dob || '[DOB Not Provided]'}`);
-  text = text.replace(/Insurance \/ Payer:\s*.*/i, `Insurance / Payer: ${payer || '[Payer Not Provided]'}`);
-  text = text.replace(/Member ID:\s*.*/i, `Member ID: ${memberId || '[Member ID Not Provided]'}`);
-  text = text.replace(/Ordering Provider:\s*.*/i, `Ordering Provider: ${provider || 'Treating Physician'}`);
-  text = text.replace(/Provider NPI:\s*.*/i, `Provider NPI: ${providerNpi || '[NPI Not Provided]'}`);
+  let letter = String(rawLetter || '').trim();
+  if (!letter) letter = generateRuleLetter(formCase, formCase.criteriaResults || []);
 
-  return text;
+  const regex = /##\s*1\.\s*PATIENT INFORMATION[\s\S]*?(?=##\s*\d+\.|$)/i;
+  if (regex.test(letter)) {
+    letter = letter.replace(regex, patientBlock);
+  } else {
+    letter = patientBlock + '\n' + letter;
+  }
+
+  letter = letter.replace(/TO:\s*.*/i, `TO: ${formCase.payer || 'Insurance Prior Authorization Department'}`);
+  letter = letter.replace(/FROM:\s*.*/i, `FROM: ${formCase.provider || 'Treating Physician'} | NPI: ${formCase.providerNpi || '[NPI Not Provided]'}`);
+
+  return letter;
 }
 
 function submitPA() {
