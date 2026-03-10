@@ -1,227 +1,1546 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>SpinePA Agent</title>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpinePA Agent — Prior Authorization Automation</title>
 <style>
-body{font-family:Arial;margin:40px;background:#f5f6fa}
+  :root {
+    --navy: #1B3A6B;
+    --teal: #0E7C7B;
+    --teal-light: #E6F4F4;
+    --red: #C0392B;
+    --green: #27AE60;
+    --amber: #E67E22;
+    --bg: #F0F4F8;
+    --card: #FFFFFF;
+    --border: #D9E2EC;
+    --text: #1A202C;
+    --muted: #64748B;
+    --sidebar: #1B3A6B;
+  }
 
-input,select,textarea{
-width:100%;
-padding:8px;
-margin:5px 0 15px
-}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-button{
-padding:10px 18px;
-background:#1B3A6B;
-color:white;
-border:none;
-cursor:pointer
-}
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
 
-table{
-width:100%;
-border-collapse:collapse;
-margin-top:20px
-}
+  .sidebar {
+    width: 240px;
+    background: var(--sidebar);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    flex-shrink: 0;
+  }
 
-td,th{
-border-bottom:1px solid #ddd;
-padding:8px
-}
+  .sidebar-logo {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
 
-.section{
-background:white;
-padding:20px;
-margin-bottom:20px
-}
+  .sidebar-logo h1 { font-size: 18px; font-weight: 700; color: #fff; }
+  .sidebar-logo p { font-size: 11px; color: #A8C8E8; margin-top: 3px; }
+
+  .sidebar-badge {
+    display: inline-block;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 6px;
+    background: var(--amber);
+  }
+
+  .nav-section { padding: 12px 0; }
+
+  .nav-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #7FA8C8;
+    padding: 4px 20px 8px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #C8DFF0;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+  .nav-item.active {
+    background: rgba(14,124,123,0.25);
+    color: #fff;
+    border-left-color: var(--teal);
+  }
+
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .nav-badge {
+    margin-left: auto;
+    background: var(--teal);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+  }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 11px;
+    color: #7FA8C8;
+  }
+
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .topbar {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .topbar h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+
+  .topbar-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 28px;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+  }
+
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--navy); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.amber .stat-value { color: var(--amber); }
+
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .form-full { grid-column: 1 / -1; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text);
+    background: #fff;
+    transition: border 0.15s;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(14,124,123,0.12);
+  }
+
+  .field textarea { resize: vertical; min-height: 120px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+
+  .btn-primary { background: var(--teal); color: #fff; }
+  .btn-primary:hover { background: #0a6b6a; }
+  .btn-secondary { background: var(--bg); color: var(--navy); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-outline { background: transparent; color: var(--teal); border: 1px solid var(--teal); }
+  .btn-outline:hover { background: var(--teal-light); }
+  .btn-danger { background: var(--red); color: white; }
+
+  .action-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 20px;
+  }
+
+  .action-row.right { justify-content: flex-end; }
+
+  .steps {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+  }
+
+  .step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+
+  .step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background: var(--border);
+    z-index: 0;
+  }
+
+  .step.done:not(:last-child)::after { background: var(--teal); }
+
+  .step-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    z-index: 1;
+    background: var(--border);
+    color: var(--muted);
+  }
+
+  .step.done .step-dot { background: var(--teal); color: #fff; }
+
+  .step.active .step-dot {
+    background: var(--navy);
+    color: #fff;
+    box-shadow: 0 0 0 4px rgba(27,58,107,0.15);
+  }
+
+  .step-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    text-align: center;
+    max-width: 80px;
+  }
+
+  .step.active .step-label { color: var(--navy); font-weight: 600; }
+  .step.done .step-label { color: var(--teal); }
+
+  .criteria-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .criteria-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .criteria-item.met { background: #F0FBF0; border-color: #A8DBA8; }
+  .criteria-item.missing { background: #FFF8F0; border-color: #F5C07A; }
+  .criteria-item.unmet { background: #FFF0F0; border-color: #F5A0A0; }
+
+  .criteria-icon { font-size: 18px; margin-top: 1px; flex-shrink: 0; }
+  .criteria-text { flex: 1; }
+  .criteria-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .criteria-note { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .alert.info { background: #E3F2FD; border: 1px solid #90CAF9; color: #1565C0; }
+  .alert.success { background: #E8F5E9; border: 1px solid #A5D6A7; color: #2E7D32; }
+  .alert.warning { background: #FFF8E1; border: 1px solid #FFE082; color: #E65100; }
+  .alert.error { background: #FFEBEE; border: 1px solid #F5A0A0; color: #C0392B; }
+
+  .letter-box {
+    background: #FAFBFC;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    font-size: 13px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    font-family: Georgia, serif;
+    color: #2D3748;
+    max-height: 520px;
+    overflow-y: auto;
+  }
+
+  .queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .queue-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    border-bottom: 2px solid var(--border);
+    background: var(--bg);
+  }
+
+  .queue-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  .queue-table tr:hover td { background: #F8FAFC; }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .status-pill.ready { background: #E3F2FD; color: #1565C0; }
+  .status-pill.review { background: #FFF3E0; color: #E67E22; }
+
+  .dash-queue { margin-top: 4px; }
+
+  .dash-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .dash-row:last-child { border-bottom: none; }
+  .dash-name { font-weight: 600; color: var(--navy); }
+  .dash-proc { color: var(--muted); font-size: 12px; }
+
+  .processing-box { text-align: center; padding: 40px; }
+
+  .spinner {
+    display: inline-block;
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(14,124,123,0.2);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .processing-step { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+  .helper-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .helper-box {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    background: #FAFBFC;
+  }
+
+  .helper-title {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .helper-big {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .helper-big.ready { color: var(--green); }
+  .helper-big.review { color: var(--amber); }
+
+  .helper-box ul {
+    margin-left: 18px;
+    line-height: 1.8;
+    font-size: 13px;
+  }
+
+  .empty-state {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 20px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: #FAFBFC;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 9999;
+  }
+
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: #fff;
+    width: min(920px, 100%);
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    padding: 24px;
+  }
+
+  .modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .modal-close {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+  }
+
+  @media(max-width: 900px) {
+    .sidebar { display: none; }
+    .stats-strip { grid-template-columns: 1fr 1fr; }
+    .form-grid, .form-grid.three, .helper-grid { grid-template-columns: 1fr; }
+  }
 </style>
-
 </head>
-
 <body>
 
-<h2>SpinePA Agent</h2>
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <h1>🦴 SpinePA Agent</h1>
+    <p>Prior Authorization Automation</p>
+    <span class="sidebar-badge" id="sidebar-badge">CONNECTING...</span>
+  </div>
 
-<div class="section">
+  <div class="nav-section">
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item active" onclick="showView('dashboard', this)"><span class="icon">📊</span> Dashboard</div>
+    <div class="nav-item" onclick="showView('new-pa', this)"><span class="icon">➕</span> New PA Request</div>
+    <div class="nav-item" onclick="showView('queue', this)"><span class="icon">📋</span> PA Queue <span class="nav-badge" id="queue-badge">0</span></div>
+  </div>
 
-<h3>New PA Request</h3>
+  <div class="nav-section">
+    <div class="nav-label">Reference</div>
+    <div class="nav-item" onclick="showView('criteria', this)"><span class="icon">📘</span> Payer Criteria</div>
+    <div class="nav-item" onclick="showView('settings', this)"><span class="icon">⚙️</span> Settings</div>
+  </div>
 
-<input id="patient" placeholder="Patient Name">
-
-<input id="dob" type="date">
-
-<input id="memberId" placeholder="Member ID">
-
-<input id="payer" placeholder="Insurance">
-
-<input id="diagnosis" placeholder="Diagnosis">
-
-<input id="procType" placeholder="Procedure">
-
-<input id="provider" placeholder="Provider">
-
-<input id="providerNpi" placeholder="Provider NPI">
-
-<textarea id="notes" placeholder="Clinical notes (optional)"></textarea>
-
-<button onclick="generate()">Generate Letter</button>
-
-<textarea id="letter" style="height:200px"></textarea>
-
-<button onclick="save()">Save Case</button>
-
+  <div class="sidebar-footer">
+    <div id="footer-practice">Spine Clinic</div>
+    <span id="mode-chip" class="sidebar-badge">CONNECTING...</span>
+  </div>
 </div>
 
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-sub" id="topbar-sub">AI-powered prior authorization for spine care</div>
+      <h2 id="topbar-title">Dashboard</h2>
+    </div>
+    <button class="btn btn-primary" onclick="startNewPA()">➕ New PA Request</button>
+  </div>
 
-<div class="section">
+  <div class="content">
 
-<h3>PA Repository</h3>
+    <div class="view active" id="view-dashboard">
+      <div class="stats-strip">
+        <div class="stat-card">
+          <div class="stat-label">Saved Cases</div>
+          <div class="stat-value" id="stat-saved">0</div>
+          <div class="stat-sub">Repository records</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Approval Rate</div>
+          <div class="stat-value">89%</div>
+          <div class="stat-sub">Internal benchmark</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Pending Review</div>
+          <div class="stat-value" id="pending-count">0</div>
+          <div class="stat-sub">Ready for manual submission</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Repository</div>
+          <div class="stat-value">DB</div>
+          <div class="stat-sub">Cases stored in backend SQLite</div>
+        </div>
+      </div>
 
-<table id="table">
-<thead>
-<tr>
-<th>Patient</th>
-<th>Payer</th>
-<th>Procedure</th>
-<th>Action</th>
-</tr>
-</thead>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+          <div class="card-title">⏳ Pending Review</div>
+          <div class="dash-queue" id="dashboard-queue"></div>
+          <div class="action-row" style="margin-top:14px;">
+            <button class="btn btn-outline" onclick="showView('queue')">View Full Queue →</button>
+          </div>
+        </div>
 
-<tbody></tbody>
+        <div class="card">
+          <div class="card-title">📈 Workflow Summary</div>
+          <div style="line-height:1.8;font-size:13px;color:var(--muted);">
+            Submitted cases are now saved in the backend repository and can be reopened, reviewed, edited, and updated later.
+          </div>
+        </div>
+      </div>
+    </div>
 
-</table>
+    <div class="view" id="view-new-pa">
 
+      <div id="step-form">
+        <div class="steps">
+          <div class="step active"><div class="step-dot">1</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step"><div class="step-dot">2</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step"><div class="step-dot">3</div><div class="step-label">AI Analysis</div></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">👤 Patient Information</div>
+          <div class="form-grid three">
+            <div class="field"><label>Patient First Name</label><input id="pt-fname" type="text"></div>
+            <div class="field"><label>Patient Last Name</label><input id="pt-lname" type="text"></div>
+            <div class="field"><label>Date of Birth</label><input id="pt-dob" type="date"></div>
+            <div class="field">
+              <label>Insurance / Payer</label>
+              <select id="pt-payer">
+                <option value="">Select payer...</option>
+                <option>Aetna</option>
+                <option>BCBS (Blue Cross Blue Shield)</option>
+                <option>UnitedHealthcare</option>
+                <option>Cigna</option>
+                <option>Humana</option>
+                <option>Medicare</option>
+                <option>Medicare Advantage</option>
+                <option>Medicaid</option>
+                <option>Anthem</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Member ID</label><input id="pt-memberid" type="text"></div>
+            <div class="field"><label>Referring Provider</label><input id="pt-provider" type="text"></div>
+            <div class="field">
+              <label>Ordering Provider</label>
+              <select id="ordering-provider" onchange="updateProviderNPI()">
+                <option value="">Loading providers...</option>
+              </select>
+            </div>
+            <div class="field"><label>Provider NPI</label><input id="provider-npi" type="text" readonly></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🏥 Procedure Request</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Procedure Type</label>
+              <select id="proc-type" onchange="updateProcDetails()">
+                <option value="">Select procedure...</option>
+                <option value="mri">Lumbar MRI (CPT 72148)</option>
+                <option value="esi">Epidural Steroid Injection (CPT 62323 / 64483)</option>
+                <option value="fusion">Lumbar Spinal Fusion (CPT 22612)</option>
+                <option value="pt">Physical Therapy Extension (CPT 97110)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Primary Diagnosis (ICD-10)</label>
+              <select id="proc-icd">
+                <option value="">Select diagnosis...</option>
+                <option>M54.5 — Low Back Pain</option>
+                <option>M51.16 — Lumbar disc degeneration</option>
+                <option>M51.17 — Lumbosacral disc degeneration</option>
+                <option>M54.4 — Lumbago with sciatica</option>
+                <option>M47.816 — Spondylosis with radiculopathy, lumbar</option>
+                <option>M43.16 — Spondylolisthesis, lumbar</option>
+                <option>M48.06 — Spinal stenosis, lumbar</option>
+                <option>S33.5XXA — Sprain of ligaments of lumbar spine</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Pain Score (VAS 0–10)</label>
+              <select id="proc-pain">
+                <option value="">Select...</option>
+                <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+                <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Duration of Symptoms</label>
+              <select id="proc-duration">
+                <option value="">Select...</option>
+                <option>Less than 4 weeks</option>
+                <option>4–6 weeks</option>
+                <option>6–12 weeks</option>
+                <option>3–6 months</option>
+                <option>6–12 months</option>
+                <option>More than 12 months</option>
+              </select>
+            </div>
+            <div class="field form-full" id="proc-hint" style="display:none;">
+              <div class="alert info" id="proc-hint-text"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-row right">
+          <button class="btn btn-primary" onclick="goToStep2()">Next: Clinical Notes →</button>
+        </div>
+      </div>
+
+      <div id="step-notes" style="display:none;">
+        <div class="steps">
+          <div class="step done"><div class="step-dot">✓</div><div class="step-label">Patient &amp; Procedure</div></div>
+          <div class="step active"><div class="step-dot">2</div><div class="step-label">Clinical Notes</div></div>
+          <div class="step"><div class="step-dot">3</div><div class="step-label">AI Analysis</div></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Review &amp; Submit</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📝 Clinical Documentation</div>
+          <div class="alert info">Clinical notes are optional. The app can still generate a structured draft from the form fields.</div>
+
+          <div class="field">
+            <label>Clinical Notes (optional)</label>
+            <textarea id="clinical-notes" style="min-height:200px;"></textarea>
+          </div>
+
+          <div class="action-row" style="justify-content:space-between;">
+            <button class="btn btn-secondary" onclick="backToStep1()">← Back</button>
+            <button class="btn btn-primary" onclick="runAnalysis()">🤖 Analyze &amp; Generate PA Letter →</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="step-processing" style="display:none;">
+        <div class="card">
+          <div class="processing-box">
+            <div class="spinner"></div>
+            <div style="font-size:16px;font-weight:600;color:var(--navy);margin-top:16px;">Agent is analyzing...</div>
+            <div class="processing-step" id="proc-step-text">Preparing request...</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="step-results" style="display:none;">
+        <div id="approval-alert"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card">
+            <div class="card-title">✅ Criteria Gap Analysis</div>
+            <div class="criteria-list" id="criteria-results"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">📄 PA Summary</div>
+            <div id="pa-summary"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🧭 Portal Helper</div>
+          <div id="portal-helper"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📝 Generated PA Letter</div>
+          <div class="letter-box" id="pa-letter"></div>
+          <div class="action-row" style="justify-content:space-between;margin-top:16px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-secondary" onclick="copyLetter()">📋 Copy Letter</button>
+              <button class="btn btn-secondary" onclick="startNewPA()">🔄 New PA</button>
+            </div>
+            <button class="btn btn-primary" onclick="saveCaseToRepository()">💾 Save / Update Case</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="view" id="view-queue">
+      <div class="card">
+        <div class="card-title">📋 PA Repository</div>
+        <table class="queue-table">
+          <thead>
+            <tr>
+              <th>Patient</th>
+              <th>Procedure</th>
+              <th>Payer</th>
+              <th>Updated</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="view" id="view-criteria">
+      <div class="card">
+        <div class="card-title">📘 Payer Criteria Reference</div>
+        <div id="criteria-content"></div>
+      </div>
+    </div>
+
+    <div class="view" id="view-settings">
+      <div class="card">
+        <div class="card-title">⚙️ Agent Settings</div>
+        <div id="settings-status-alert" class="alert info">Checking backend server connection...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="modal-backdrop" id="review-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--navy);">Saved PA Review</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px;">Review a saved repository case and reopen it for editing</div>
+      </div>
+      <button class="modal-close" onclick="closeReviewModal()">×</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+      <div class="card" style="margin:0;padding:18px;">
+        <div class="card-title" style="margin-bottom:10px;">📄 Case Summary</div>
+        <div id="review-summary"></div>
+      </div>
+
+      <div class="card" style="margin:0;padding:18px;">
+        <div class="card-title" style="margin-bottom:10px;">🧭 Portal Helper</div>
+        <div id="review-helper"></div>
+      </div>
+
+      <div class="card" style="margin:0;padding:18px;grid-column:1 / -1;">
+        <div class="card-title" style="margin-bottom:10px;">📝 Letter Preview</div>
+        <div id="review-letter" class="letter-box" style="max-height:420px;"></div>
+      </div>
+
+      <div style="grid-column:1 / -1;display:flex;justify-content:flex-end;gap:10px;">
+        <button class="btn btn-danger" onclick="deleteReviewedCase()">🗑 Delete</button>
+        <button class="btn btn-secondary" onclick="closeReviewModal()">Close</button>
+        <button class="btn btn-primary" onclick="editReviewedCase()">✏️ Edit Case</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
+const BACKEND = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : '';
+let AI_MODE = false;
+let providerDirectory = [];
+let repoCases = [];
+let currentCase = null;
+let reviewCaseId = null;
 
-const API=""
+const CRITERIA = {
+  mri: [
+    { id:'c1', label:'6+ weeks of conservative treatment documented', keywords:['physical therapy','pt','weeks','conservative'], required:true },
+    { id:'c2', label:'Failure to improve with conservative management', keywords:['no improvement','minimal improvement','failed','persistent'], required:true },
+    { id:'c3', label:'Specific radicular or neurological symptoms', keywords:['radicular','radiating','radiculopathy','numbness','weakness','sciatica'], required:true }
+  ],
+  esi: [
+    { id:'e1', label:'MRI or CT evidence of disc herniation / stenosis', keywords:['mri','stenosis','herniation','ct'], required:true },
+    { id:'e2', label:'Radicular symptoms documented', keywords:['radicular','dermatomal','leg pain','sciatica'], required:true }
+  ],
+  fusion: [
+    { id:'f1', label:'Structural pathology documented', keywords:['spondylolisthesis','instability','stenosis','disc degeneration'], required:true },
+    { id:'f2', label:'Failed conservative treatment', keywords:['physical therapy','failed','months'], required:true }
+  ],
+  pt: [
+    { id:'p1', label:'Functional progress documented', keywords:['progress','improved','functional'], required:true },
+    { id:'p2', label:'Goals remaining', keywords:['goal','range of motion','strength'], required:true }
+  ]
+};
 
-function validateDOB(dob){
-
-if(!dob)return true
-
-let d=new Date(dob)
-let today=new Date()
-
-if(d>today){
-alert("DOB cannot be future")
-return false
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
-return true
+function formatDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { month:'2-digit', day:'2-digit', year:'numeric' });
 }
 
-function collect(){
-
-return{
-patient:patient.value,
-dob:dob.value,
-memberId:memberId.value,
-payer:payer.value,
-diagnosis:diagnosis.value,
-procType:procType.value,
-provider:provider.value,
-providerNpi:providerNpi.value,
-notes:notes.value
+function normalizeList(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map(item => {
+    if (typeof item === 'string') return item.trim();
+    if (item && typeof item === 'object') {
+      if (item.element) return `${item.element}${item.detail ? ': ' + item.detail : ''}`;
+      return JSON.stringify(item);
+    }
+    return String(item || '').trim();
+  }).filter(Boolean);
 }
 
+function validateDOB(dob) {
+  if (!dob) return true;
+  const d = new Date(dob);
+  const today = new Date();
+  if (Number.isNaN(d.getTime())) {
+    alert('Invalid date of birth.');
+    return false;
+  }
+  if (d > today) {
+    alert('Date of birth cannot be in the future.');
+    return false;
+  }
+  const minDate = new Date();
+  minDate.setFullYear(today.getFullYear() - 120);
+  if (d < minDate) {
+    alert('Please check DOB. Age appears unrealistic.');
+    return false;
+  }
+  return true;
 }
 
-async function generate(){
+async function checkBackend() {
+  try {
+    const res = await fetch(BACKEND + '/status');
+    const data = await res.json();
+    AI_MODE = !!data.has_api_key;
+    providerDirectory = Array.isArray(data.providers) ? data.providers : [];
+    loadProviderDirectory(data);
 
-let data=collect()
+    const badge = document.getElementById('sidebar-badge');
+    const chip = document.getElementById('mode-chip');
+    const alert = document.getElementById('settings-status-alert');
 
-if(!validateDOB(data.dob))return
-
-let r=await fetch(API+"/generate-letter",{
-method:"POST",
-headers:{'Content-Type':'application/json'},
-body:JSON.stringify(data)
-})
-
-let j=await r.json()
-
-letter.value=j.letter
-
+    if (AI_MODE) {
+      badge.textContent = 'AI MODE';
+      badge.style.background = 'var(--green)';
+      chip.textContent = '🤖 AI Mode Active';
+      chip.style.background = 'var(--green)';
+      alert.className = 'alert success';
+      alert.textContent = 'Backend connected and AI mode is active.';
+    } else {
+      badge.textContent = 'SERVER MODE';
+      badge.style.background = 'var(--amber)';
+      chip.textContent = '🔌 Server Connected';
+      chip.style.background = 'var(--amber)';
+      alert.className = 'alert warning';
+      alert.textContent = 'Backend connected. AI key not detected, so rule-based draft logic will be used.';
+    }
+  } catch {
+    AI_MODE = false;
+    const badge = document.getElementById('sidebar-badge');
+    const chip = document.getElementById('mode-chip');
+    const alert = document.getElementById('settings-status-alert');
+    badge.textContent = 'DEMO MODE';
+    chip.textContent = '⚡ Demo Mode';
+    alert.className = 'alert warning';
+    alert.textContent = 'Backend not reachable.';
+  }
 }
 
-async function save(){
+function loadProviderDirectory(statusData) {
+  const select = document.getElementById('ordering-provider');
+  const npiInput = document.getElementById('provider-npi');
+  if (!select || !npiInput) return;
 
-let data=collect()
-data.letter=letter.value
+  select.innerHTML = '';
 
-await fetch(API+"/cases",{
-method:"POST",
-headers:{'Content-Type':'application/json'},
-body:JSON.stringify(data)
-})
+  if (!providerDirectory.length) {
+    const fallbackName = statusData.provider_name || 'Treating Physician';
+    const option = document.createElement('option');
+    option.value = fallbackName;
+    option.textContent = fallbackName;
+    select.appendChild(option);
+    npiInput.value = statusData.npi || '';
+    return;
+  }
 
-load()
+  providerDirectory.forEach(provider => {
+    const option = document.createElement('option');
+    option.value = provider.name;
+    option.textContent = provider.name;
+    select.appendChild(option);
+  });
 
+  select.selectedIndex = 0;
+  updateProviderNPI();
 }
 
-async function load(){
-
-let r=await fetch(API+"/cases")
-let j=await r.json()
-
-let body=document.querySelector("#table tbody")
-
-body.innerHTML=""
-
-j.cases.forEach(c=>{
-
-let tr=document.createElement("tr")
-
-tr.innerHTML=`
-<td>${c.patient}</td>
-<td>${c.payer}</td>
-<td>${c.procedure}</td>
-<td>
-<button onclick="edit(${c.id})">Edit</button>
-<button onclick="del(${c.id})">Delete</button>
-</td>
-`
-
-body.appendChild(tr)
-
-})
-
+function updateProviderNPI() {
+  const select = document.getElementById('ordering-provider');
+  const npiInput = document.getElementById('provider-npi');
+  if (!select || !npiInput) return;
+  const provider = providerDirectory.find(p => p.name === select.value);
+  npiInput.value = provider ? provider.npi : '';
 }
 
-async function del(id){
+function showView(id, el = null) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
-await fetch(API+"/cases/"+id,{method:"DELETE"})
-load()
+  const target = document.getElementById('view-' + id);
+  if (target) target.classList.add('active');
 
+  const labels = {
+    dashboard: 'Dashboard',
+    'new-pa': 'New PA Request',
+    queue: 'PA Queue',
+    criteria: 'Payer Criteria',
+    settings: 'Settings'
+  };
+
+  document.getElementById('topbar-title').textContent = labels[id] || id;
+
+  if (el) {
+    el.classList.add('active');
+  } else {
+    document.querySelectorAll('.nav-item').forEach(item => {
+      if (item.textContent.includes(labels[id])) item.classList.add('active');
+    });
+  }
+
+  if (id === 'queue') loadCases();
+  if (id === 'criteria') showCriteria('mri');
 }
 
-async function edit(id){
-
-let r=await fetch(API+"/cases")
-let j=await r.json()
-
-let c=j.cases.find(x=>x.id==id)
-
-patient.value=c.patient
-dob.value=c.dob
-memberId.value=c.memberId
-payer.value=c.payer
-diagnosis.value=c.diagnosis
-procType.value=c.procedure
-provider.value=c.provider
-providerNpi.value=c.providerNpi
-notes.value=c.notes
-letter.value=c.letter
-
+function startNewPA() {
+  resetForm();
+  showView('new-pa');
 }
 
-load()
+function resetForm() {
+  [
+    'pt-fname','pt-lname','pt-dob','pt-memberid','pt-payer','pt-provider',
+    'proc-type','proc-icd','proc-pain','proc-duration','clinical-notes'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
 
+  const ordering = document.getElementById('ordering-provider');
+  if (ordering && ordering.options.length) ordering.selectedIndex = 0;
+  updateProviderNPI();
+
+  currentCase = null;
+  reviewCaseId = null;
+
+  document.getElementById('step-form').style.display = 'block';
+  document.getElementById('step-notes').style.display = 'none';
+  document.getElementById('step-processing').style.display = 'none';
+  document.getElementById('step-results').style.display = 'none';
+}
+
+function updateProcDetails() {
+  const v = document.getElementById('proc-type').value;
+  const hints = {
+    mri:'Typical requirement: conservative care plus neurologic/radicular documentation.',
+    esi:'Typical requirement: imaging evidence plus radicular symptoms and failed conservative treatment.',
+    fusion:'Typical requirement: failed longer-term conservative care plus functional impairment.',
+    pt:'Typical requirement: functional progress plus measurable therapy goals remaining.'
+  };
+  if (v && hints[v]) {
+    document.getElementById('proc-hint').style.display = 'block';
+    document.getElementById('proc-hint-text').textContent = '💡 ' + hints[v];
+  } else {
+    document.getElementById('proc-hint').style.display = 'none';
+  }
+}
+
+function goToStep2() {
+  const required = ['pt-fname','pt-lname','pt-payer','proc-type','proc-icd'];
+  for (const id of required) {
+    const el = document.getElementById(id);
+    if (!el.value) {
+      alert('Please fill in all required fields before continuing.');
+      el.focus();
+      return;
+    }
+  }
+  if (!validateDOB(document.getElementById('pt-dob').value)) return;
+
+  document.getElementById('step-form').style.display = 'none';
+  document.getElementById('step-notes').style.display = 'block';
+}
+
+function backToStep1() {
+  document.getElementById('step-form').style.display = 'block';
+  document.getElementById('step-notes').style.display = 'none';
+  document.getElementById('step-processing').style.display = 'none';
+  document.getElementById('step-results').style.display = 'none';
+}
+
+function collectCaseFromForm() {
+  const fname = document.getElementById('pt-fname').value.trim();
+  const lname = document.getElementById('pt-lname').value.trim();
+  return {
+    fname,
+    lname,
+    patient: `${fname} ${lname}`.trim(),
+    dob: document.getElementById('pt-dob').value || '',
+    memberId: document.getElementById('pt-memberid').value.trim(),
+    payer: document.getElementById('pt-payer').value,
+    referringProvider: document.getElementById('pt-provider').value.trim(),
+    provider: document.getElementById('ordering-provider').value || document.getElementById('pt-provider').value.trim() || 'Treating Physician',
+    providerNpi: document.getElementById('provider-npi').value.trim(),
+    procType: document.getElementById('proc-type').value,
+    diagnosis: document.getElementById('proc-icd').value,
+    painScore: document.getElementById('proc-pain').value,
+    duration: document.getElementById('proc-duration').value,
+    notes: document.getElementById('clinical-notes').value.trim()
+  };
+}
+
+function analyzeNotes(notes, procType) {
+  const lower = (notes || '').toLowerCase();
+  const criteria = CRITERIA[procType] || [];
+  return criteria.map(c => {
+    const found = c.keywords.some(kw => lower.includes(kw));
+    return { ...c, status: found ? 'met' : (c.required ? 'missing' : 'unmet') };
+  });
+}
+
+function runAnalysis() {
+  const formCase = collectCaseFromForm();
+
+  if (!formCase.patient || !formCase.payer) {
+    alert('Enter patient name and payer before analysis.');
+    return;
+  }
+  if (!validateDOB(formCase.dob)) return;
+
+  if (!formCase.notes) {
+    const ok = confirm('No clinical note entered. Generate a structured draft anyway?');
+    if (!ok) return;
+  }
+
+  document.getElementById('step-notes').style.display = 'none';
+  document.getElementById('step-processing').style.display = 'block';
+
+  setTimeout(() => {
+    if (AI_MODE) runAIAnalysis();
+    else showResults();
+  }, 600);
+}
+
+async function runAIAnalysis() {
+  const formCase = collectCaseFromForm();
+  const localCriteria = analyzeNotes(formCase.notes, formCase.procType);
+
+  try {
+    const analyzeRes = await fetch(BACKEND + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notes: formCase.notes,
+        proc_type: formCase.procType,
+        payer: formCase.payer,
+        patient: formCase.patient,
+        diagnosis: formCase.diagnosis,
+        provider: formCase.provider,
+        provider_npi: formCase.providerNpi,
+        pain_score: formCase.painScore,
+        duration: formCase.duration
+      })
+    });
+    const analyzeData = await analyzeRes.json();
+
+    const letterRes = await fetch(BACKEND + '/generate-letter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notes: formCase.notes,
+        payer: formCase.payer,
+        patient: formCase.patient,
+        dob: formCase.dob,
+        member_id: formCase.memberId,
+        diagnosis: formCase.diagnosis,
+        proc_type: formCase.procType,
+        pain_score: formCase.painScore,
+        duration: formCase.duration,
+        referring_provider: formCase.referringProvider,
+        provider: formCase.provider,
+        provider_npi: formCase.providerNpi
+      })
+    });
+    const letterData = await letterRes.json();
+
+    const helper = analyzeData.portal_helper || {};
+    const analysis = analyzeData.analysis || {};
+    const finalLetter = forcePatientBlock(letterData.letter || '', formCase);
+
+    showResultsFromData(formCase, localCriteria, helper, analysis, finalLetter);
+  } catch (e) {
+    alert('AI analysis failed. Falling back to rule-based draft.');
+    showResults();
+  }
+}
+
+function showResults() {
+  const formCase = collectCaseFromForm();
+  const results = analyzeNotes(formCase.notes, formCase.procType);
+  const helper = buildPortalHelperFromResults(results);
+  const letter = forcePatientBlock(generateRuleLetter(formCase, results), formCase);
+  showResultsFromData(formCase, results, helper, {}, letter);
+}
+
+function showResultsFromData(formCase, results, helper, analysis, letter) {
+  document.getElementById('step-processing').style.display = 'none';
+  document.getElementById('step-results').style.display = 'block';
+
+  const metCount = results.filter(r => r.status === 'met').length;
+  const missingRequired = normalizeList(helper.missing || []);
+  const likelihood = missingRequired.length === 0 ? 'high' : missingRequired.length <= 2 ? 'moderate' : 'low';
+
+  document.getElementById('approval-alert').innerHTML =
+    likelihood === 'high'
+      ? `<div class="alert success"><strong>High approval probability.</strong></div>`
+      : likelihood === 'moderate'
+      ? `<div class="alert warning"><strong>Moderate approval probability.</strong></div>`
+      : `<div class="alert error"><strong>Low approval probability.</strong></div>`;
+
+  document.getElementById('criteria-results').innerHTML = results.map(r => `
+    <div class="criteria-item ${r.status}">
+      <div class="criteria-icon">${r.status === 'met' ? '✅' : (r.required ? '⚠️' : 'ℹ️')}</div>
+      <div class="criteria-text">
+        <div class="criteria-label">${escapeHtml(r.label)}</div>
+        <div class="criteria-note">${r.required ? 'Required criterion' : 'Supportive criterion'}</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('pa-summary').innerHTML = `
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:7px 0;color:var(--muted);width:50%">Patient</td><td style="font-weight:600">${escapeHtml(formCase.patient)}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">DOB</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formatDate(formCase.dob))}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Member ID</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formCase.memberId || '—')}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formCase.payer)}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Diagnosis</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formCase.diagnosis)}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Ordering Provider</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formCase.provider)}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Provider NPI</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formCase.providerNpi || '—')}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Criteria Met</td><td style="font-weight:600;border-top:1px solid var(--border)">${metCount} / ${results.length}</td></tr>
+    </table>
+  `;
+
+  document.getElementById('portal-helper').innerHTML = buildPortalHelperHtml(helper);
+  document.getElementById('pa-letter').textContent = letter;
+
+  currentCase = {
+    ...formCase,
+    criteriaResults: results,
+    portalHelper: helper,
+    letter,
+    status: 'submitted'
+  };
+}
+
+function buildPortalHelperFromResults(results) {
+  const missing = results
+    .filter(r => r.status === 'missing' && r.required)
+    .map(r => ({ element: r.label, detail: 'Not clearly documented in current inputs.' }));
+
+  return {
+    status: missing.length === 0 ? 'Ready for manual submission' : 'Needs review before manual submission',
+    missing,
+    attachments: [
+      'Prior authorization letter',
+      'Clinical notes or visit summary',
+      'Relevant imaging report',
+      'Conservative treatment documentation if applicable'
+    ],
+    next_steps: missing.length === 0
+      ? ['Review the letter.', 'Save the case.', 'Upload documents manually in the payer portal.']
+      : ['Address missing items if available.', 'Review the letter.', 'Save and upload documents manually in the payer portal.']
+  };
+}
+
+function buildPortalHelperHtml(helper) {
+  const missing = normalizeList(helper.missing || []);
+  const attachments = normalizeList(helper.attachments || []);
+  const nextSteps = normalizeList(helper.next_steps || []);
+  const ready = String(helper.status || '').toLowerCase().includes('ready');
+
+  return `
+    <div class="helper-grid">
+      <div class="helper-box">
+        <div class="helper-title">Submission Readiness</div>
+        <div class="helper-big ${ready ? 'ready' : 'review'}">${escapeHtml(helper.status || '')}</div>
+      </div>
+      <div class="helper-box">
+        <div class="helper-title">Recommended Attachments</div>
+        ${attachments.length ? `<ul>${attachments.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : 'None'}
+      </div>
+      <div class="helper-box">
+        <div class="helper-title">Missing Required Items</div>
+        ${missing.length ? `<ul>${missing.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div>No required gaps detected.</div>'}
+      </div>
+      <div class="helper-box">
+        <div class="helper-title">Next Steps</div>
+        ${nextSteps.length ? `<ul>${nextSteps.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : 'None'}
+      </div>
+    </div>
+  `;
+}
+
+function generateRuleLetter(formCase, results) {
+  const procLabels = {
+    mri:'Lumbar MRI',
+    esi:'Epidural Steroid Injection',
+    fusion:'Lumbar Spinal Fusion',
+    pt:'Physical Therapy Extension'
+  };
+  const cpt = { mri:'72148', esi:'62323 / 64483', fusion:'22612', pt:'97110' };
+
+  return `# PRIOR AUTHORIZATION REQUEST LETTER
+
+DATE: ${new Date().toLocaleDateString('en-US', { month:'long', day:'2-digit', year:'numeric' })}
+
+TO: ${formCase.payer}
+
+FROM: ${formCase.provider} | NPI: ${formCase.providerNpi || '[NPI Not Provided]'}
+Spine Clinic
+
+RE: Prior Authorization Request – ${procLabels[formCase.procType] || formCase.procType} (CPT ${cpt[formCase.procType] || 'N/A'})
+
+## 1. PATIENT INFORMATION
+
+Patient Name: ${formCase.patient}
+Date of Birth: ${formatDate(formCase.dob)}
+Insurance / Payer: ${formCase.payer}
+Member ID: ${formCase.memberId || '—'}
+
+## 2. CLINICAL SUMMARY
+
+${formCase.notes || `The patient presents with ${formCase.diagnosis || 'the documented condition'} with symptoms requiring evaluation.`}
+
+## 3. MEDICAL NECESSITY
+
+The requested service is supported by the current intake and documentation.
+
+## 4. REQUESTED PROCEDURE AND CODING
+
+Procedure Requested: ${procLabels[formCase.procType] || formCase.procType}
+Diagnosis: ${formCase.diagnosis}
+Ordering Provider: ${formCase.provider}
+Provider NPI: ${formCase.providerNpi || '[NPI Not Provided]'}
+
+Respectfully,
+
+${formCase.provider}`;
+}
+
+function forcePatientBlock(rawLetter, formCase) {
+  const patientBlock = `## 1. PATIENT INFORMATION
+
+Patient Name: ${formCase.patient || '[Patient Name Not Provided]'}
+Date of Birth: ${formatDate(formCase.dob) || '[DOB Not Provided]'}
+Insurance / Payer: ${formCase.payer || '[Payer Not Provided]'}
+Member ID: ${formCase.memberId || '[Member ID Not Provided]'}
+`;
+
+  let letter = String(rawLetter || '').trim();
+  const regex = /##\s*1\.\s*PATIENT INFORMATION[\s\S]*?(?=##\s*\d+\.|$)/i;
+  if (regex.test(letter)) {
+    letter = letter.replace(regex, patientBlock);
+  } else {
+    letter = patientBlock + '\n' + letter;
+  }
+
+  letter = letter.replace(/TO:\s*.*/i, `TO: ${formCase.payer || 'Insurance Prior Authorization Department'}`);
+  return letter;
+}
+
+async function saveCaseToRepository() {
+  if (!currentCase) {
+    alert('Generate a case first.');
+    return;
+  }
+
+  const method = currentCase.id ? 'PUT' : 'POST';
+  const url = currentCase.id ? `${BACKEND}/cases/${currentCase.id}` : `${BACKEND}/cases`;
+
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(currentCase)
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'Failed to save case.');
+    return;
+  }
+
+  currentCase = data.case;
+  alert(currentCase.id ? 'Case saved to repository.' : 'Case created in repository.');
+  await loadCases();
+  showView('queue');
+}
+
+async function loadCases() {
+  try {
+    const res = await fetch(BACKEND + '/cases');
+    const data = await res.json();
+    repoCases = Array.isArray(data.cases) ? data.cases : [];
+  } catch {
+    repoCases = [];
+  }
+
+  document.getElementById('queue-badge').textContent = repoCases.length;
+  document.getElementById('pending-count').textContent = repoCases.length;
+  document.getElementById('stat-saved').textContent = repoCases.length;
+
+  renderCases();
+}
+
+function renderCases() {
+  const tbody = document.getElementById('queue-body');
+  const preview = document.getElementById('dashboard-queue');
+
+  if (!repoCases.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:18px;color:var(--muted);">No saved repository cases yet.</td></tr>`;
+    preview.innerHTML = `<div class="empty-state">No cases in the repository yet.</div>`;
+    return;
+  }
+
+  tbody.innerHTML = repoCases.map(c => `
+    <tr>
+      <td><strong>${escapeHtml(c.patient || '—')}</strong></td>
+      <td>${escapeHtml(c.procType || '—')}</td>
+      <td>${escapeHtml(c.payer || '—')}</td>
+      <td>${escapeHtml(formatDate(c.updatedAt || c.createdAt))}</td>
+      <td><span class="status-pill ready">${escapeHtml(c.status || 'submitted')}</span></td>
+      <td><button class="btn btn-outline" style="padding:5px 10px;font-size:12px;" onclick="reviewRepositoryCase(${c.id})">Review</button></td>
+    </tr>
+  `).join('');
+
+  preview.innerHTML = repoCases.slice(0, 3).map(c => `
+    <div class="dash-row">
+      <div>
+        <div class="dash-name">${escapeHtml(c.patient || '—')}</div>
+        <div class="dash-proc">${escapeHtml(c.procType || '—')} · ${escapeHtml(c.payer || '—')}</div>
+      </div>
+      <span class="status-pill ready">Saved</span>
+    </div>
+  `).join('');
+}
+
+async function reviewRepositoryCase(id) {
+  const res = await fetch(`${BACKEND}/cases/${id}`);
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'Could not load case.');
+    return;
+  }
+
+  const c = data.case;
+  reviewCaseId = c.id;
+  currentCase = c;
+
+  document.getElementById('review-summary').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:7px 0;color:var(--muted)">Patient</td><td style="font-weight:600">${escapeHtml(c.patient || '—')}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">DOB</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(formatDate(c.dob))}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Member ID</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(c.memberId || '—')}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Payer</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(c.payer || '—')}</td></tr>
+      <tr><td style="padding:7px 0;color:var(--muted);border-top:1px solid var(--border)">Diagnosis</td><td style="font-weight:600;border-top:1px solid var(--border)">${escapeHtml(c.diagnosis || '—')}</td></tr>
+    </table>
+  `;
+
+  document.getElementById('review-helper').innerHTML = buildPortalHelperHtml(c.portalHelper || {});
+  document.getElementById('review-letter').textContent = c.letter || '';
+  document.getElementById('review-modal').classList.add('open');
+}
+
+function closeReviewModal() {
+  document.getElementById('review-modal').classList.remove('open');
+}
+
+function editReviewedCase() {
+  if (!currentCase) return;
+
+  document.getElementById('pt-fname').value = currentCase.fname || '';
+  document.getElementById('pt-lname').value = currentCase.lname || '';
+  document.getElementById('pt-dob').value = currentCase.dob || '';
+  document.getElementById('pt-memberid').value = currentCase.memberId || '';
+  document.getElementById('pt-payer').value = currentCase.payer || '';
+  document.getElementById('pt-provider').value = currentCase.referringProvider || '';
+  document.getElementById('proc-type').value = currentCase.procType || '';
+  document.getElementById('proc-icd').value = currentCase.diagnosis || '';
+  document.getElementById('proc-pain').value = currentCase.painScore || '';
+  document.getElementById('proc-duration').value = currentCase.duration || '';
+  document.getElementById('clinical-notes').value = currentCase.notes || '';
+  const ordering = document.getElementById('ordering-provider');
+  if (ordering) ordering.value = currentCase.provider || '';
+  document.getElementById('provider-npi').value = currentCase.providerNpi || '';
+
+  closeReviewModal();
+  backToStep1();
+  showView('new-pa');
+}
+
+async function deleteReviewedCase() {
+  if (!reviewCaseId) return;
+  const ok = confirm('Delete this case from the repository?');
+  if (!ok) return;
+
+  const res = await fetch(`${BACKEND}/cases/${reviewCaseId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'Delete failed.');
+    return;
+  }
+
+  closeReviewModal();
+  currentCase = null;
+  reviewCaseId = null;
+  await loadCases();
+}
+
+function copyLetter() {
+  const text = document.getElementById('pa-letter').textContent || '';
+  navigator.clipboard.writeText(text).then(() => alert('Letter copied.'));
+}
+
+function showCriteria(type) {
+  const items = CRITERIA[type] || [];
+  document.getElementById('criteria-content').innerHTML = items.map(item => `
+    <div class="criteria-item ${item.required ? 'missing' : 'unmet'}" style="margin-bottom:10px;">
+      <div class="criteria-icon">${item.required ? '⭐' : '➕'}</div>
+      <div class="criteria-text">
+        <div class="criteria-label">${escapeHtml(item.label)}</div>
+        <div class="criteria-note">${item.required ? 'Required criterion' : 'Supportive criterion'}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await checkBackend();
+  await loadCases();
+});
 </script>
-
 </body>
 </html>
