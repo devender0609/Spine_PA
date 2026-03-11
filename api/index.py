@@ -4,16 +4,21 @@ import json
 import os
 import re
 import sqlite3
-from pathlib import Path
 from datetime import date, datetime
+from pathlib import Path
 
-import anthropic
-from flask import Flask, jsonify, request, send_from_directory
+try:
+    import anthropic
+except Exception:  # pragma: no cover
+    anthropic = None
+
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = ROOT_DIR / "public"
-DB_FILE = ROOT_DIR / "spinepa_cases.db"
+# On Vercel the project filesystem is read-only. Use /tmp when available.
+DB_FILE = Path(os.environ.get("SPINEPA_DB_FILE", "/tmp/spinepa_cases.db"))
 CONFIG_FILE = ROOT_DIR / "config.json"
 
 app = Flask(__name__, static_folder=str(PUBLIC_DIR), static_url_path="")
@@ -33,7 +38,12 @@ def title_from_suffix(suffix: str) -> str:
     return " ".join(p.title() for p in parts if p)
 
 
+def now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
 def get_conn() -> sqlite3.Connection:
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
@@ -45,6 +55,7 @@ def init_db() -> None:
         """
         CREATE TABLE IF NOT EXISTS cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_uid TEXT,
             patient TEXT,
             fname TEXT,
             lname TEXT,
@@ -62,14 +73,30 @@ def init_db() -> None:
             criteria_results TEXT,
             portal_helper TEXT,
             letter TEXT,
+            package_json TEXT,
             status TEXT,
+            storage_source TEXT,
             created_at TEXT,
             updated_at TEXT
         )
         """
     )
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+    migrations = {
+        "case_uid": "ALTER TABLE cases ADD COLUMN case_uid TEXT",
+        "package_json": "ALTER TABLE cases ADD COLUMN package_json TEXT",
+        "storage_source": "ALTER TABLE cases ADD COLUMN storage_source TEXT",
+    }
+    for column, sql in migrations.items():
+        if column not in columns:
+            conn.execute(sql)
+
     conn.commit()
     conn.close()
+
+
+init_db()
 
 
 def load_config() -> dict:
@@ -168,43 +195,105 @@ def normalize_diagnosis_and_icd(diagnosis: str) -> tuple[str, str]:
     return raw, ""
 
 
+def has_specific_icd(icd_code: str) -> bool:
+    if not icd_code:
+        return False
+    if "." not in icd_code:
+        return False
+    tail = icd_code.split(".", 1)[1]
+    return bool(tail and not re.fullmatch(r"X+", tail, re.I))
+
+
+def duration_is_short(duration: str) -> bool:
+    value = (duration or "").lower()
+    return "less than 4 weeks" in value or value.startswith("4–6") or value.startswith("4-6")
+
+
 def conservative_analysis(data: dict) -> dict:
     notes = (data.get("notes") or "").lower()
-    pain_score = str(data.get("pain_score") or "")
-    duration = str(data.get("duration") or "")
-    diagnosis = str(data.get("diagnosis") or "")
-    proc_type = str(data.get("proc_type") or "")
+    pain_score = str(data.get("pain_score") or data.get("painScore") or "").strip()
+    duration = str(data.get("duration") or "").strip()
+    diagnosis = str(data.get("diagnosis") or "").strip()
+    proc_type = str(data.get("proc_type") or data.get("procType") or "").strip().lower()
+    diagnosis_text, icd_code = normalize_diagnosis_and_icd(diagnosis)
 
     missing: list[dict] = []
+    strengths: list[str] = []
 
-    if not diagnosis:
+    if diagnosis:
+        strengths.append("Diagnosis entered")
+    else:
         missing.append({"element": "Diagnosis", "detail": "Diagnosis is missing."})
-    if not proc_type:
+
+    if proc_type:
+        strengths.append("Procedure selected")
+    else:
         missing.append({"element": "Requested Procedure", "detail": "Requested procedure is missing."})
-    if not duration:
+
+    if duration:
+        strengths.append(f"Symptom duration documented ({duration})")
+    else:
         missing.append({"element": "Duration of Symptoms", "detail": "Duration was not entered."})
-    if not pain_score:
+
+    if pain_score:
+        strengths.append(f"Pain score documented ({pain_score}/10)")
+    else:
         missing.append({"element": "Pain Score", "detail": "Pain score was not entered."})
 
-    if proc_type == "mri" and not any(
-        k in notes for k in ["physical therapy", "pt", "conservative", "nsaid", "neurolog", "radicul", "numb", "weakness"]
-    ):
-        missing.append({
-            "element": "Conservative Treatment / Neurologic Detail",
-            "detail": "Clinical notes do not clearly document failed conservative care and neurologic or radicular features."
-        })
+    if not icd_code:
+        missing.append({"element": "ICD-10 Code", "detail": "No ICD-10 diagnosis code was detected."})
+    elif not has_specific_icd(icd_code):
+        missing.append({"element": "ICD-10 Code Specificity", "detail": f"{icd_code} may be too broad or incomplete for some payers; use the most specific supported code."})
+    else:
+        strengths.append(f"Specific ICD-10 code documented ({icd_code})")
+
+    neuro_terms = ["radicular", "radiating", "radiculopathy", "numb", "weak", "sciatica", "paresthesia", "motor deficit"]
+    conservative_terms = ["physical therapy", "pt", "home exercise", "nsaid", "medication", "chiropractic", "conservative", "activity modification"]
+    imaging_terms = ["mri", "ct", "stenosis", "herniation", "disc bulge", "foraminal", "compression"]
+
+    has_neuro = any(term in notes for term in neuro_terms)
+    has_conservative = any(term in notes for term in conservative_terms)
+    has_imaging = any(term in notes for term in imaging_terms)
+
+    if notes:
+        strengths.append("Clinical note or structured summary provided")
+
+    if proc_type == "mri":
+        if not has_conservative and not duration:
+            missing.append({"element": "Conservative Treatment", "detail": "Clinical notes do not clearly document prior conservative management."})
+        if not has_neuro:
+            missing.append({"element": "Neurologic / Radicular Features", "detail": "Clinical notes do not clearly document neurologic, radicular, numbness, weakness, or sciatica symptoms."})
+    elif proc_type == "esi":
+        if not has_imaging:
+            missing.append({"element": "Imaging Support", "detail": "Clinical notes do not clearly mention imaging evidence such as stenosis, herniation, or nerve compression."})
+        if not has_neuro:
+            missing.append({"element": "Radicular Symptoms", "detail": "Clinical notes do not clearly document radicular symptoms."})
+    elif proc_type == "fusion":
+        if not has_conservative and duration_is_short(duration):
+            missing.append({"element": "Failed Conservative Treatment", "detail": "Fusion requests usually require documented nonoperative treatment and adequate symptom duration."})
+        if pain_score and pain_score.isdigit() and int(pain_score) < 6:
+            missing.append({"element": "Functional Severity", "detail": "Pain severity appears relatively low for a fusion request; make sure disability and failed treatment are documented."})
+    elif proc_type == "pt":
+        if not notes:
+            missing.append({"element": "Therapy Progress / Goals", "detail": "PT extension requests are stronger when current progress and remaining goals are documented."})
 
     likelihood = "high" if len(missing) == 0 else "moderate" if len(missing) <= 2 else "low"
 
     return {
-        "summary": "Structured case review completed.",
-        "medical_necessity": "Review the generated package and fill any documentation gaps before manual submission.",
+        "summary": "Structured payer readiness review completed.",
+        "medical_necessity": (
+            f"Review supports {proc_label(proc_type)} based on the entered diagnosis, symptom duration, pain severity, and available clinical details. "
+            "Resolve any missing documentation before manual submission."
+        ),
         "approval_likelihood": likelihood,
+        "strengths": strengths,
         "missing_elements": missing,
     }
 
 
 def try_ai_json(prompt: str, api_key: str, model_name: str) -> dict | None:
+    if anthropic is None:
+        return None
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
@@ -219,7 +308,7 @@ def try_ai_json(prompt: str, api_key: str, model_name: str) -> dict | None:
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
-            text = text[start:end + 1]
+            text = text[start : end + 1]
         return json.loads(text)
     except Exception:
         return None
@@ -235,6 +324,7 @@ def build_portal_helper(data: dict, analysis: dict) -> dict:
             missing.append({"element": str(item), "detail": ""})
 
     status = "Ready for manual submission" if not missing else "Needs review before manual submission"
+    proc_name = proc_label(data.get("proc_type") or data.get("procType") or "")
 
     return {
         "status": status,
@@ -246,10 +336,50 @@ def build_portal_helper(data: dict, analysis: dict) -> dict:
             "Physical therapy / conservative treatment documentation if applicable",
         ],
         "next_steps": [
-            "Review the generated letter for accuracy.",
-            "Export the Word letter or PDF package.",
-            "Upload the documents manually in the payer portal.",
+            "Review all patient, payer, diagnosis, and provider fields for accuracy.",
+            "Resolve any missing required items flagged below.",
+            f"Export the {proc_name} package and upload it manually in the payer portal.",
         ],
+    }
+
+
+def normalize_case_payload(data: dict, config: dict | None = None) -> dict:
+    config = config or load_config()
+    providers = config.get("providers", [])
+
+    fname = (data.get("fname") or "").strip()
+    lname = (data.get("lname") or "").strip()
+    patient = (data.get("patient") or f"{fname} {lname}").strip()
+    provider = (data.get("provider") or config.get("provider_name") or "Treating Physician").strip()
+    provider_npi = (data.get("provider_npi") or data.get("providerNpi") or "").strip()
+    if not provider_npi:
+        provider_npi = resolve_npi(provider, providers) or config.get("npi", "")
+
+    member_id = (data.get("member_id") or data.get("memberId") or "").strip()
+    proc_type = (data.get("proc_type") or data.get("procType") or "").strip().lower()
+
+    return {
+        "case_uid": (data.get("case_uid") or data.get("caseUid") or "").strip(),
+        "patient": patient,
+        "fname": fname,
+        "lname": lname,
+        "dob": (data.get("dob") or "").strip(),
+        "member_id": member_id,
+        "payer": (data.get("payer") or "").strip(),
+        "diagnosis": (data.get("diagnosis") or "").strip(),
+        "proc_type": proc_type,
+        "provider": provider,
+        "provider_npi": provider_npi,
+        "referring_provider": (data.get("referring_provider") or data.get("referringProvider") or "").strip(),
+        "pain_score": str(data.get("pain_score") or data.get("painScore") or "").strip(),
+        "duration": str(data.get("duration") or "").strip(),
+        "notes": (data.get("notes") or "").strip(),
+        "criteria_results": data.get("criteria_results") or data.get("criteriaResults") or [],
+        "portal_helper": data.get("portal_helper") or data.get("portalHelper") or {},
+        "letter": (data.get("letter") or "").strip(),
+        "package_json": data.get("package_json") or data.get("packageJson") or {},
+        "status": (data.get("status") or "submitted").strip() or "submitted",
+        "storage_source": (data.get("storage_source") or data.get("storageSource") or "backend").strip() or "backend",
     }
 
 
@@ -266,9 +396,9 @@ def build_structured_letter(data: dict, practice_name: str) -> tuple[str, dict]:
     pain_score = (data.get("pain_score") or data.get("painScore") or "").strip()
     duration = (data.get("duration") or "").strip()
     notes = (data.get("notes") or "").strip()
-    referring_provider = (data.get("referring_provider") or "").strip()
+    referring_provider = (data.get("referring_provider") or data.get("referringProvider") or "").strip()
     provider = (data.get("provider") or "Treating Physician").strip()
-    provider_npi = (data.get("provider_npi") or "").strip()
+    provider_npi = (data.get("provider_npi") or data.get("providerNpi") or "").strip()
 
     cpt_code = infer_cpt(proc_type)
     proc_name = proc_label(proc_type)
@@ -277,13 +407,12 @@ def build_structured_letter(data: dict, practice_name: str) -> tuple[str, dict]:
     clinical_summary = (
         notes
         if notes
-        else f"The patient presents for evaluation related to {diagnosis_text or 'the requested service'} with persistent symptoms documented in the intake form."
+        else f"The patient presents for evaluation related to {diagnosis_text or diagnosis_raw or 'the requested service'} with persistent symptoms documented in the intake form."
     )
 
     medical_necessity = (
-        f"Based on the documented diagnosis, symptom duration ({duration or 'not specified'}), "
-        f"and current pain severity ({pain_score or 'not specified'}/10), {proc_name} is requested "
-        f"as medically necessary to guide or provide appropriate treatment."
+        f"Based on the documented diagnosis, symptom duration ({duration or 'not specified'}), and current pain severity ({pain_score or 'not specified'}/10), "
+        f"{proc_name} is requested as medically necessary to guide or provide appropriate treatment."
     )
 
     letter = f"""# PRIOR AUTHORIZATION REQUEST LETTER
@@ -352,9 +481,50 @@ Ordering Provider | NPI: {provider_npi or '[NPI Not Provided]'}
     return letter, structured
 
 
+def build_package_payload(data: dict, config: dict) -> dict:
+    normalized = normalize_case_payload(data, config)
+    letter, structured = build_structured_letter(normalized, config.get("practice_name", "Spine Clinic"))
+
+    analysis = conservative_analysis(normalized)
+    helper = normalized.get("portal_helper") or build_portal_helper(normalized, analysis)
+    criteria_results = normalized.get("criteria_results") or []
+
+    package = {
+        "generated_at": now_iso(),
+        "practice_name": config.get("practice_name", "Spine Clinic"),
+        "patient": {
+            "name": normalized["patient"],
+            "dob": normalized["dob"],
+            "member_id": normalized["member_id"],
+            "payer": normalized["payer"],
+        },
+        "request": {
+            "procedure": structured["procedure"],
+            "cpt_code": structured["cpt_code"],
+            "diagnosis": structured["diagnosis"],
+            "icd_10": structured["icd_10"],
+            "pain_score": normalized["pain_score"],
+            "duration": normalized["duration"],
+        },
+        "providers": {
+            "ordering_provider": normalized["provider"],
+            "provider_npi": normalized["provider_npi"],
+            "referring_provider": normalized["referring_provider"],
+        },
+        "clinical_notes": normalized["notes"],
+        "criteria_results": criteria_results,
+        "analysis": analysis,
+        "portal_helper": helper,
+        "letter": normalized["letter"] or letter,
+        "submission_checklist": helper.get("attachments", []),
+    }
+    return package
+
+
 def row_to_case(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
+        "caseUid": row["case_uid"] or f"CASE-{row['id']}",
         "patient": row["patient"],
         "fname": row["fname"],
         "lname": row["lname"],
@@ -371,8 +541,10 @@ def row_to_case(row: sqlite3.Row) -> dict:
         "notes": row["notes"],
         "criteriaResults": json.loads(row["criteria_results"] or "[]"),
         "portalHelper": json.loads(row["portal_helper"] or "{}"),
+        "packageJson": json.loads(row["package_json"] or "{}"),
         "letter": row["letter"],
         "status": row["status"],
+        "storageSource": row["storage_source"] or "backend",
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -396,7 +568,7 @@ def static_files(path: str):
 
 
 # ─────────────────────────────────────────────────────────────
-# Status / analysis / letter
+# Status / settings / analysis / letter / packages
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/status")
@@ -410,6 +582,21 @@ def status():
             "provider_name": config.get("provider_name", ""),
             "npi": config.get("npi", ""),
             "providers": config.get("providers", []),
+            "storage_mode": "ephemeral_backend_sqlite",
+            "db_file": str(DB_FILE),
+        }
+    )
+
+
+@app.route("/settings")
+def settings():
+    config = load_config()
+    return jsonify(
+        {
+            "practice_name": config.get("practice_name", "Spine Clinic"),
+            "provider_name": config.get("provider_name", "Treating Physician"),
+            "has_api_key": bool(config.get("api_key")),
+            "providers": config.get("providers", []),
         }
     )
 
@@ -417,42 +604,33 @@ def status():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     config = load_config()
-    data = request.json or {}
+    normalized = normalize_case_payload(request.json or {}, config)
 
-    proc_type = data.get("proc_type", "")
-    patient = data.get("patient", "")
-    payer = data.get("payer", "")
-    diagnosis = data.get("diagnosis", "")
-    provider = data.get("provider", "")
-    provider_npi = data.get("provider_npi", "")
-    pain_score = data.get("pain_score", "")
-    duration = data.get("duration", "")
-    notes = data.get("notes", "")
+    cpt_code = infer_cpt(normalized["proc_type"])
+    diagnosis_text, icd_code = normalize_diagnosis_and_icd(normalized["diagnosis"])
 
-    cpt_code = infer_cpt(proc_type)
-    diagnosis_text, icd_code = normalize_diagnosis_and_icd(diagnosis)
-
-    analysis = conservative_analysis(data)
+    analysis = conservative_analysis(normalized)
     api_key = config.get("api_key")
 
     if api_key:
         prompt = f"""
 You are a medical prior authorization specialist.
-Analyze the following request and return JSON with keys: summary, medical_necessity, approval_likelihood, missing_elements.
+Analyze the following request and return JSON with keys: summary, medical_necessity, approval_likelihood, strengths, missing_elements.
 For missing_elements, return a list of objects with keys "element" and "detail".
+Do not change patient demographic values.
 
-PATIENT: {patient}
-PAYER: {payer}
-ORDERING PROVIDER: {provider}
-NPI: {provider_npi}
-PROCEDURE: {proc_type}
+PATIENT: {normalized['patient']}
+PAYER: {normalized['payer']}
+ORDERING PROVIDER: {normalized['provider']}
+NPI: {normalized['provider_npi']}
+PROCEDURE: {normalized['proc_type']}
 CPT: {cpt_code}
 DIAGNOSIS: {diagnosis_text}
 ICD-10: {icd_code}
-PAIN SCORE: {pain_score}
-DURATION: {duration}
+PAIN SCORE: {normalized['pain_score']}
+DURATION: {normalized['duration']}
 CLINICAL NOTES:
-{notes}
+{normalized['notes']}
 """
         ai_json = try_ai_json(
             prompt,
@@ -462,18 +640,18 @@ CLINICAL NOTES:
         if isinstance(ai_json, dict):
             analysis = {**analysis, **ai_json}
 
-    portal_helper = build_portal_helper(data, analysis)
+    portal_helper = build_portal_helper(normalized, analysis)
 
     return jsonify(
         {
             "analysis": analysis,
             "portal_helper": portal_helper,
             "echo_input": {
-                "patient": patient,
-                "payer": payer,
-                "diagnosis": diagnosis,
-                "provider": provider,
-                "provider_npi": provider_npi,
+                "patient": normalized["patient"],
+                "payer": normalized["payer"],
+                "diagnosis": normalized["diagnosis"],
+                "provider": normalized["provider"],
+                "provider_npi": normalized["provider_npi"],
             },
         }
     )
@@ -482,25 +660,18 @@ CLINICAL NOTES:
 @app.route("/generate-letter", methods=["POST"])
 def generate_letter():
     config = load_config()
-    data = request.json or {}
-    providers = config.get("providers", [])
-
-    if not data.get("provider"):
-        data["provider"] = config.get("provider_name", "Treating Physician")
-    if not data.get("provider_npi"):
-        data["provider_npi"] = resolve_npi(data.get("provider", ""), providers) or config.get("npi", "")
-
-    letter, structured = build_structured_letter(data, config.get("practice_name", "Spine Clinic"))
+    normalized = normalize_case_payload(request.json or {}, config)
+    letter, structured = build_structured_letter(normalized, config.get("practice_name", "Spine Clinic"))
 
     return jsonify(
         {
             "letter": letter,
             "structured": structured,
             "echo_input": {
-                "patient": data.get("patient", ""),
-                "payer": data.get("payer", ""),
-                "dob": data.get("dob", ""),
-                "member_id": data.get("member_id", data.get("memberId", "")),
+                "patient": normalized["patient"],
+                "payer": normalized["payer"],
+                "dob": normalized["dob"],
+                "member_id": normalized["member_id"],
             },
             **structured,
         }
@@ -510,29 +681,21 @@ def generate_letter():
 @app.route("/build-package", methods=["POST"])
 def build_package():
     config = load_config()
-    data = request.json or {}
+    package = build_package_payload(request.json or {}, config)
+    return jsonify(package)
 
-    helper = data.get("portalHelper") or {}
-    letter = data.get("letter") or build_structured_letter(data, config.get("practice_name", "Spine Clinic"))[0]
 
-    clinical_summary = {
-        "patient": data.get("patient", ""),
-        "dob": data.get("dob", ""),
-        "member_id": data.get("memberId") or data.get("member_id", ""),
-        "payer": data.get("payer", ""),
-        "diagnosis": data.get("diagnosis", ""),
-        "procedure": proc_label(data.get("procType") or data.get("proc_type") or ""),
-        "provider": data.get("provider", ""),
-    }
+@app.route("/export-package", methods=["POST"])
+def export_package():
+    config = load_config()
+    package = build_package_payload(request.json or {}, config)
 
-    return jsonify(
-        {
-            "clinical_summary": clinical_summary,
-            "portal_helper": helper,
-            "letter": letter,
-            "submission_checklist": helper.get("attachments", []),
-        }
-    )
+    export_dir = Path("/tmp/spinepa_exports")
+    export_dir.mkdir(parents=True, exist_ok=True)
+    case_stub = slug(package["patient"].get("name", "case") or "case")[:40] or "CASE"
+    outfile = export_dir / f"{case_stub}_PA_PACKAGE.json"
+    outfile.write_text(json.dumps(package, indent=2), encoding="utf-8")
+    return send_file(outfile, as_attachment=True, download_name=outfile.name, mimetype="application/json")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -542,9 +705,7 @@ def build_package():
 @app.route("/cases", methods=["GET"])
 def list_cases():
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM cases ORDER BY datetime(updated_at) DESC, id DESC"
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM cases ORDER BY datetime(updated_at) DESC, id DESC").fetchall()
     conn.close()
     return jsonify({"cases": [row_to_case(r) for r in rows]})
 
@@ -561,38 +722,44 @@ def get_case(case_id: int):
 
 @app.route("/cases", methods=["POST"])
 def create_case():
-    data = request.json or {}
-    now = datetime.utcnow().isoformat()
+    config = load_config()
+    payload = normalize_case_payload(request.json or {}, config)
+    package = build_package_payload(payload, config)
+    now = now_iso()
 
     conn = get_conn()
     cur = conn.execute(
         """
         INSERT INTO cases (
-            patient, fname, lname, dob, member_id, payer, diagnosis, proc_type,
+            case_uid, patient, fname, lname, dob, member_id, payer, diagnosis, proc_type,
             provider, provider_npi, referring_provider, pain_score, duration,
-            notes, criteria_results, portal_helper, letter, status, created_at, updated_at
+            notes, criteria_results, portal_helper, letter, package_json, status, storage_source,
+            created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            data.get("patient", ""),
-            data.get("fname", ""),
-            data.get("lname", ""),
-            data.get("dob", ""),
-            data.get("memberId", ""),
-            data.get("payer", ""),
-            data.get("diagnosis", ""),
-            data.get("procType", ""),
-            data.get("provider", ""),
-            data.get("providerNpi", ""),
-            data.get("referringProvider", ""),
-            data.get("painScore", ""),
-            data.get("duration", ""),
-            data.get("notes", ""),
-            json.dumps(data.get("criteriaResults", [])),
-            json.dumps(data.get("portalHelper", {})),
-            data.get("letter", ""),
-            data.get("status", "submitted"),
+            payload["case_uid"] or f"CASE-{slug(payload['patient']) or 'PATIENT'}-{int(datetime.utcnow().timestamp())}",
+            payload["patient"],
+            payload["fname"],
+            payload["lname"],
+            payload["dob"],
+            payload["member_id"],
+            payload["payer"],
+            payload["diagnosis"],
+            payload["proc_type"],
+            payload["provider"],
+            payload["provider_npi"],
+            payload["referring_provider"],
+            payload["pain_score"],
+            payload["duration"],
+            payload["notes"],
+            json.dumps(payload["criteria_results"]),
+            json.dumps(payload["portal_helper"]),
+            payload["letter"] or package["letter"],
+            json.dumps(package),
+            payload["status"],
+            payload["storage_source"],
             now,
             now,
         ),
@@ -607,8 +774,10 @@ def create_case():
 
 @app.route("/cases/<int:case_id>", methods=["PUT"])
 def update_case(case_id: int):
-    data = request.json or {}
-    now = datetime.utcnow().isoformat()
+    config = load_config()
+    payload = normalize_case_payload(request.json or {}, config)
+    package = build_package_payload(payload, config)
+    now = now_iso()
 
     conn = get_conn()
     existing = conn.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
@@ -619,31 +788,34 @@ def update_case(case_id: int):
     conn.execute(
         """
         UPDATE cases SET
-            patient = ?, fname = ?, lname = ?, dob = ?, member_id = ?, payer = ?,
+            case_uid = ?, patient = ?, fname = ?, lname = ?, dob = ?, member_id = ?, payer = ?,
             diagnosis = ?, proc_type = ?, provider = ?, provider_npi = ?, referring_provider = ?,
             pain_score = ?, duration = ?, notes = ?, criteria_results = ?, portal_helper = ?,
-            letter = ?, status = ?, updated_at = ?
+            letter = ?, package_json = ?, status = ?, storage_source = ?, updated_at = ?
         WHERE id = ?
         """,
         (
-            data.get("patient", ""),
-            data.get("fname", ""),
-            data.get("lname", ""),
-            data.get("dob", ""),
-            data.get("memberId", ""),
-            data.get("payer", ""),
-            data.get("diagnosis", ""),
-            data.get("procType", ""),
-            data.get("provider", ""),
-            data.get("providerNpi", ""),
-            data.get("referringProvider", ""),
-            data.get("painScore", ""),
-            data.get("duration", ""),
-            data.get("notes", ""),
-            json.dumps(data.get("criteriaResults", [])),
-            json.dumps(data.get("portalHelper", {})),
-            data.get("letter", ""),
-            data.get("status", existing["status"]),
+            payload["case_uid"] or existing["case_uid"] or f"CASE-{case_id}",
+            payload["patient"],
+            payload["fname"],
+            payload["lname"],
+            payload["dob"],
+            payload["member_id"],
+            payload["payer"],
+            payload["diagnosis"],
+            payload["proc_type"],
+            payload["provider"],
+            payload["provider_npi"],
+            payload["referring_provider"],
+            payload["pain_score"],
+            payload["duration"],
+            payload["notes"],
+            json.dumps(payload["criteria_results"]),
+            json.dumps(payload["portal_helper"]),
+            payload["letter"] or package["letter"],
+            json.dumps(package),
+            payload["status"] or existing["status"] or "submitted",
+            payload["storage_source"] or existing["storage_source"] or "backend",
             now,
             case_id,
         ),
@@ -670,5 +842,4 @@ def delete_case(case_id: int):
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)

@@ -6,9 +6,13 @@
   ],
   "routes": [
     { "src": "/status", "dest": "/api/index.py" },
+    { "src": "/settings", "dest": "/api/index.py" },
     { "src": "/analyze", "dest": "/api/index.py" },
     { "src": "/generate-letter", "dest": "/api/index.py" },
-    { "src": "/settings", "dest": "/api/index.py" },
+    { "src": "/build-package", "dest": "/api/index.py" },
+    { "src": "/export-package", "dest": "/api/index.py" },
+    { "src": "/cases", "dest": "/api/index.py" },
+    { "src": "/cases/(.*)", "dest": "/api/index.py" },
 
     { "handle": "filesystem" },
 
