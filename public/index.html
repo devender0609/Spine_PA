@@ -379,12 +379,20 @@
       margin-right:8px;
       margin-bottom:8px;
     }
-    .score-pill.warn{
-      background:#fff7ed;
-      color:#b45309;
+    .score-pill.green{
+      background:#ecfdf5;
+      color:#166534;
     }
-    .score-pill.info{
-      background:#eef6ff;
+    .score-pill.yellow{
+      background:#fffbeb;
+      color:#a16207;
+    }
+    .score-pill.red{
+      background:#fef2f2;
+      color:#b91c1c;
+    }
+    .score-pill.blue{
+      background:#eff6ff;
       color:#1d4ed8;
     }
     .subcard{
@@ -393,6 +401,27 @@
       border-radius:10px;
       padding:12px;
       margin-top:12px;
+    }
+    .subcard.green{
+      border-left:4px solid #22c55e;
+      background:#f0fdf4;
+    }
+    .subcard.yellow{
+      border-left:4px solid #f59e0b;
+      background:#fffbeb;
+    }
+    .subcard.red{
+      border-left:4px solid #ef4444;
+      background:#fef2f2;
+    }
+    .subcard.blue{
+      border-left:4px solid #3b82f6;
+      background:#eff6ff;
+    }
+    .small-note{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:6px;
     }
     .choice-grid{
       display:grid;
@@ -1227,52 +1256,114 @@
       return missing;
     }
 
+    function numericScoreValue(score){
+      if(score === null || score === undefined || score === "") return null;
+      const n = Number(score);
+      if(Number.isNaN(n)) return null;
+      if(n <= 1) return Math.round(n * 100);
+      return Math.round(n);
+    }
+
+    function scoreColorClass(score){
+      const value = numericScoreValue(score);
+      if(value === null) return "blue";
+      if(value >= 80) return "green";
+      if(value >= 60) return "yellow";
+      return "red";
+    }
+
+    function likelihoodColorClass(text){
+      const value = String(text || "").toLowerCase();
+      if(value.includes("high")) return "green";
+      if(value.includes("moderate")) return "yellow";
+      if(value.includes("low")) return "red";
+      return "blue";
+    }
+
+    function countColorClass(count){
+      if(count === null || count === undefined || Number.isNaN(Number(count))) return "blue";
+      const value = Number(count);
+      if(value === 0) return "green";
+      if(value <= 2) return "yellow";
+      return "red";
+    }
+
     function renderProfessionalAnalysis(analysis, portalHelper){
       const likelihood = analysis?.approval_likelihood || "N/A";
-      const score = analysis?.approval_score ?? "N/A";
+      const rawScore = analysis?.approval_score;
+      const score100 = numericScoreValue(rawScore);
+      const scoreDisplay = score100 === null ? "N/A" : `${score100} / 100`;
+      const criteriaMet = Number.isFinite(Number(analysis?.criteria_met)) ? Number(analysis.criteria_met) : null;
+      const criteriaTotal = Number.isFinite(Number(analysis?.criteria_total)) ? Number(analysis.criteria_total) : null;
+      const missingCount = Number.isFinite(Number(analysis?.missing_count)) ? Number(analysis.missing_count) : (Array.isArray(portalHelper?.missing) ? portalHelper.missing.length : null);
+
       const summary = analysis?.summary || "No summary returned.";
       const medNec = analysis?.medical_necessity || "No medical necessity summary returned.";
       const strengths = Array.isArray(analysis?.strengths) ? analysis.strengths : [];
       const missing = Array.isArray(portalHelper?.missing) ? portalHelper.missing : [];
       const docs = Array.isArray(portalHelper?.attachments) ? portalHelper.attachments : [];
       const steps = Array.isArray(portalHelper?.portal?.how_to_submit) ? portalHelper.portal.how_to_submit : [];
+      const denialRiskReasons = Array.isArray(analysis?.denial_risk?.top_reasons) ? analysis.denial_risk.top_reasons : [];
 
       $("analysisSummaryProfessional").innerHTML = `
-        <div class="score-pill info">Approval Likelihood: ${esc(likelihood)}</div>
-        <div class="score-pill">Support Score: ${esc(score)}</div>
+        <div class="score-pill ${likelihoodColorClass(likelihood)}">
+          Approval Likelihood: ${esc(likelihood)}
+        </div>
+        <div class="score-pill ${scoreColorClass(rawScore)}">
+          Support Score: ${esc(scoreDisplay)}
+        </div>
+        <div class="score-pill ${criteriaMet !== null && criteriaTotal !== null ? scoreColorClass(criteriaTotal ? (criteriaMet / criteriaTotal) * 100 : null) : "blue"}">
+          Criteria Met: ${criteriaMet !== null && criteriaTotal !== null ? esc(`${criteriaMet} / ${criteriaTotal}`) : "N/A"}
+        </div>
+        <div class="score-pill ${countColorClass(missingCount)}">
+          Missing Items: ${missingCount === null ? "N/A" : esc(String(missingCount))}
+        </div>
+        <div class="small-note">
+          Support Score is displayed on a 0–100 scale, where higher scores indicate a stronger prior authorization packet.
+        </div>
 
-        <div class="subcard">
+        <div class="subcard blue">
           <strong>Executive Summary</strong>
           <div style="margin-top:8px">${esc(summary)}</div>
         </div>
 
-        <div class="subcard">
+        <div class="subcard blue">
           <strong>Medical Necessity Assessment</strong>
           <div style="margin-top:8px">${esc(medNec)}</div>
         </div>
 
-        <div class="subcard">
+        <div class="subcard green">
           <strong>Strengths of Submission</strong>
           <ul class="analysis-list">
             ${(strengths.length ? strengths : ["No strengths listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
           </ul>
         </div>
 
-        <div class="subcard">
+        <div class="subcard ${missing.length ? "yellow" : "green"}">
           <strong>Gaps / Missing Elements</strong>
           <ul class="analysis-list">
-            ${(missing.length ? missing.map(item => `${item.element}${item.detail ? `: ${item.detail}` : ""}`) : ["No missing items listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+            ${(missing.length
+              ? missing.map(item => `${item.element}${item.detail ? `: ${item.detail}` : ""}`)
+              : ["No missing items listed."])
+              .map(x => `<li>${esc(x)}</li>`).join("")}
           </ul>
         </div>
 
-        <div class="subcard">
+        <div class="subcard ${denialRiskReasons.length ? "red" : "green"}">
+          <strong>Top Denial Risks</strong>
+          <ul class="analysis-list">
+            ${(denialRiskReasons.length ? denialRiskReasons : ["No major denial risks highlighted."]).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>
+
+        <div class="subcard blue">
           <strong>Recommended Documents</strong>
           <ul class="analysis-list">
             ${(docs.length ? docs : ["No documents listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
           </ul>
         </div>
 
-        <div class="subcard">
+        <div class="subcard blue">
           <strong>Recommended Submission Steps</strong>
           <ul class="analysis-list">
             ${(steps.length ? steps : ["No submission steps listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
@@ -1286,16 +1377,31 @@
       const docs = (portalHelper?.attachments || []).map(x => `- ${x}`).join("\n");
       const steps = ((portalHelper?.portal || {}).how_to_submit || []).map(x => `- ${x}`).join("\n");
       const strengths = (analysis?.strengths || []).map(x => `- ${x}`).join("\n");
+      const denialRisks = (analysis?.denial_risk?.top_reasons || []).map(x => `- ${x}`).join("\n");
+
+      const rawScore = analysis?.approval_score;
+      const score100 = numericScoreValue(rawScore);
+      const scoreDisplay = score100 === null ? "N/A" : `${score100} / 100`;
+      const criteriaDisplay = Number.isFinite(Number(analysis?.criteria_met)) && Number.isFinite(Number(analysis?.criteria_total))
+        ? `${Number(analysis.criteria_met)} / ${Number(analysis.criteria_total)}`
+        : "N/A";
+      const missingCount = Number.isFinite(Number(analysis?.missing_count))
+        ? String(Number(analysis.missing_count))
+        : String((portalHelper?.missing || []).length || "N/A");
 
       $("analysisOutput").textContent =
         `PRIOR AUTHORIZATION READINESS REPORT\n` +
         `=================================\n\n` +
         `Approval likelihood: ${analysis?.approval_likelihood || "N/A"}\n` +
-        `Approval score: ${analysis?.approval_score ?? "N/A"}\n\n` +
+        `Support score: ${scoreDisplay}\n` +
+        `Criteria met: ${criteriaDisplay}\n` +
+        `Missing items: ${missingCount}\n` +
+        `Score scale: 0 to 100\n\n` +
         `Executive summary:\n${analysis?.summary || "No summary returned."}\n\n` +
         `Medical necessity:\n${analysis?.medical_necessity || "No medical necessity summary returned."}\n\n` +
         `Strengths:\n${strengths || "No strengths listed."}\n\n` +
         `Missing items:\n${missing || "None listed."}\n\n` +
+        `Top denial risks:\n${denialRisks || "None listed."}\n\n` +
         `Required / recommended documents:\n${docs || "None listed."}\n\n` +
         `Submission steps:\n${steps || "None listed."}`;
 

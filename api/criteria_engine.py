@@ -135,6 +135,7 @@ def evaluate_case(data: dict[str, Any]) -> dict[str, Any]:
 
     total_required = len([c for c in criteria_results if c["required"]]) or 1
     met_required = len([c for c in criteria_results if c["required"] and c["status"] == "met"])
+    missing_required = max(total_required - met_required, 0)
     approval_score = round((met_required / total_required) * 100)
     if approval_score >= 85:
         likelihood = "high"
@@ -158,6 +159,9 @@ def evaluate_case(data: dict[str, Any]) -> dict[str, Any]:
         "medical_necessity": medical_necessity,
         "approval_likelihood": likelihood,
         "approval_score": approval_score,
+        "criteria_met": met_required,
+        "criteria_total": total_required,
+        "missing_count": missing_required,
         "strengths": strengths,
         "missing_elements": missing,
         "criteria_results": criteria_results,
