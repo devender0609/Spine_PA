@@ -16,6 +16,7 @@
       --teal:#0d8b81;
       --green:#1ca669;
       --soft:#f7fafc;
+      --warn:#b45309;
     }
     *{box-sizing:border-box}
     body{
@@ -26,7 +27,7 @@
     }
     .app{
       display:grid;
-      grid-template-columns:236px minmax(0,1fr);
+      grid-template-columns:232px minmax(0,1fr);
       min-height:100vh;
     }
     .sidebar{
@@ -109,8 +110,70 @@
       font-weight:700;
       cursor:pointer;
     }
+    .btn:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+    .btn-secondary{
+      background:#fff;
+      color:var(--teal);
+      border:1px solid var(--teal);
+    }
+    .btn-muted{
+      background:#fff;
+      color:var(--text);
+      border:1px solid var(--line);
+    }
+    .btn-small{
+      padding:8px 12px;
+      border-radius:8px;
+      font-size:13px;
+    }
     .main{
       padding:20px 28px 28px;
+      min-width:0;
+    }
+    .dashboard-grid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:16px;
+      margin-bottom:18px;
+    }
+    .metric{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:18px;
+    }
+    .metric .label{color:var(--muted);font-size:13px;margin-bottom:8px}
+    .metric .value{font-size:36px;font-weight:800}
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:22px 24px;
+      min-width:0;
+      overflow:hidden;
+      margin-bottom:18px;
+    }
+    .card-title{
+      font-size:15px;
+      font-weight:700;
+      margin:0 0 16px;
+    }
+    .section-note{
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:10px;
+    }
+    .output{
+      white-space:pre-wrap;
+      background:#f8fbfd;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:16px;
+      max-height:520px;
+      overflow:auto;
       min-width:0;
     }
     .stepper{
@@ -126,6 +189,7 @@
       position:relative;
       color:var(--muted);
       font-size:12px;
+      cursor:pointer;
     }
     .step:not(:last-child)::after{
       content:"";
@@ -157,32 +221,19 @@
       box-shadow:0 0 0 4px rgba(23,61,121,.12);
     }
     .step.active{color:var(--text)}
-    .cards{
-      display:grid;
-      gap:18px;
+    .step.done .step-badge{
+      background:#0d8b81;
+      color:#fff;
     }
-    .card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:22px 24px;
-      min-width:0;
-      overflow:hidden;
-    }
-    .card-title{
-      font-size:15px;
-      font-weight:700;
-      margin:0 0 16px;
-    }
+    .wizard-page{display:none}
+    .wizard-page.active{display:block}
     .form-grid{
       display:grid;
       grid-template-columns:repeat(12,minmax(0,1fr));
       gap:14px 16px;
       min-width:0;
     }
-    .field{
-      min-width:0;
-    }
+    .field{min-width:0}
     .span-4{grid-column:span 4}
     .span-6{grid-column:span 6}
     .span-8{grid-column:span 8}
@@ -229,6 +280,7 @@
       font-size:14px;
     }
     .muted{color:var(--muted)}
+    .warn{color:var(--warn)}
     .list{
       margin:0;
       padding-left:18px;
@@ -241,35 +293,6 @@
       margin-top:18px;
       flex-wrap:wrap;
     }
-    .btn-secondary{
-      background:#fff;
-      color:var(--teal);
-      border:1px solid var(--teal);
-    }
-    .output{
-      white-space:pre-wrap;
-      background:#f8fbfd;
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:16px;
-      max-height:520px;
-      overflow:auto;
-      min-width:0;
-    }
-    .dashboard-grid{
-      display:grid;
-      grid-template-columns:repeat(4,minmax(0,1fr));
-      gap:16px;
-      margin-bottom:18px;
-    }
-    .metric{
-      background:#fff;
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:18px;
-    }
-    .metric .label{color:var(--muted);font-size:13px;margin-bottom:8px}
-    .metric .value{font-size:36px;font-weight:800}
     .queue-table{
       width:100%;
       border-collapse:collapse;
@@ -295,13 +318,35 @@
       text-decoration:none;
       word-break:break-word;
     }
-    .section-note{
-      font-size:13px;
-      color:var(--muted);
-      margin-bottom:10px;
+    .status-box{
+      margin-bottom:14px;
+      padding:12px 14px;
+      border-radius:10px;
+      background:#eef6ff;
+      border:1px solid #cfe0fb;
+      display:none;
     }
+    .status-box.show{display:block}
+    .review-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:18px;
+    }
+    .review-block{
+      background:#f8fbfd;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:14px;
+    }
+    .review-block h4{
+      margin:0 0 10px;
+      font-size:14px;
+    }
+    .kv{margin:6px 0}
+    .kv strong{display:inline-block;min-width:140px}
+    .hidden{display:none !important}
     @media (max-width:1200px){
-      .split{grid-template-columns:1fr}
+      .split,.review-grid{grid-template-columns:1fr}
       .dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .span-4,.span-6,.span-8{grid-column:span 6}
     }
@@ -376,134 +421,174 @@
         </div>
 
         <div id="view-new-request" style="display:none">
+          <div class="status-box" id="editStatus"></div>
+
           <div class="stepper">
-            <div class="step active">
+            <div class="step active" data-step="1">
               <div class="step-badge">1</div>
               Patient &amp;<br>Procedure
             </div>
-            <div class="step">
+            <div class="step" data-step="2">
               <div class="step-badge">2</div>
               Clinical Notes
             </div>
-            <div class="step">
+            <div class="step" data-step="3">
               <div class="step-badge">3</div>
               AI Analysis
             </div>
-            <div class="step">
+            <div class="step" data-step="4">
               <div class="step-badge">4</div>
               Review &amp;<br>Submit
             </div>
           </div>
 
-          <div class="cards">
-            <div class="card">
-              <h3 class="card-title">🧑‍⚕️ Patient Information</h3>
-              <div class="form-grid">
-                <div class="field span-4">
-                  <label>Patient First Name</label>
-                  <input id="fname" />
-                </div>
-                <div class="field span-4">
-                  <label>Patient Last Name</label>
-                  <input id="lname" />
-                </div>
-                <div class="field span-4">
-                  <label>Date of Birth</label>
-                  <input id="dob" type="date" />
-                </div>
+          <input type="hidden" id="currentCaseId" />
 
-                <div class="field span-4">
-                  <label>Insurance / Payer</label>
-                  <select id="payerSelect"></select>
-                </div>
-                <div class="field span-4">
-                  <label>Member ID</label>
-                  <input id="memberId" />
-                </div>
-                <div class="field span-4">
-                  <label>Referring Provider</label>
-                  <input id="referringProvider" />
-                </div>
+          <div class="card wizard-page active" id="wizard-step-1">
+            <h3 class="card-title">🧑‍⚕️ Patient Information</h3>
+            <div class="form-grid">
+              <div class="field span-4">
+                <label>Patient First Name</label>
+                <input id="fname" />
+              </div>
+              <div class="field span-4">
+                <label>Patient Last Name</label>
+                <input id="lname" />
+              </div>
+              <div class="field span-4">
+                <label>Date of Birth</label>
+                <input id="dob" type="date" />
+              </div>
 
-                <div class="field span-4">
-                  <label>Ordering Provider</label>
-                  <select id="providerSelect"></select>
+              <div class="field span-4">
+                <label>Insurance / Payer</label>
+                <select id="payerSelect"></select>
+              </div>
+              <div class="field span-4">
+                <label>Member ID</label>
+                <input id="memberId" />
+              </div>
+              <div class="field span-4">
+                <label>Referring Provider</label>
+                <input id="referringProvider" />
+              </div>
+
+              <div class="field span-4">
+                <label>Ordering Provider</label>
+                <select id="providerSelect"></select>
+              </div>
+              <div class="field span-4">
+                <label>Provider NPI</label>
+                <input id="providerNpi" />
+              </div>
+            </div>
+
+            <h3 class="card-title" style="margin-top:26px">🧾 Procedure Request</h3>
+            <div class="form-grid">
+              <div class="field span-8">
+                <label>Procedure Type</label>
+                <select id="procedureSelect"></select>
+              </div>
+              <div class="field span-4">
+                <label>Pain Score (VAS 0–10)</label>
+                <select id="painScore">
+                  <option value="">Select...</option>
+                  <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option>
+                  <option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+                </select>
+              </div>
+
+              <div class="field span-8">
+                <label>Primary Diagnosis (ICD-10)</label>
+                <select id="diagnosisSelect"></select>
+              </div>
+              <div class="field span-4">
+                <label>Duration of Symptoms</label>
+                <select id="durationSelect">
+                  <option value="">Select...</option>
+                  <option>Less than 6 weeks</option>
+                  <option>6–12 weeks</option>
+                  <option>3–6 months</option>
+                  <option>6–12 months</option>
+                  <option>More than 12 months</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn" id="toStep2Btn">Next: Clinical Notes →</button>
+            </div>
+          </div>
+
+          <div class="card wizard-page" id="wizard-step-2">
+            <h3 class="card-title">Clinical Notes</h3>
+            <div class="split">
+              <div>
+                <div class="field">
+                  <label>Clinical Notes</label>
+                  <textarea id="notes" placeholder="Include symptoms, neurologic findings, MRI/CT/X-ray results, failed PT, medications, injections, function limits, and anything relevant for the payer review."></textarea>
                 </div>
-                <div class="field span-4">
-                  <label>Provider NPI</label>
-                  <input id="providerNpi" />
+              </div>
+
+              <div class="info-box">
+                <h4>Insurance Submission Information</h4>
+                <div class="muted" id="payerInfoName">Select a payer to see workflow details.</div>
+                <div style="margin-top:12px" id="payerInfoBody">
+                  <div class="muted">Portal, required documents, and steps will appear here.</div>
                 </div>
               </div>
             </div>
 
-            <div class="card">
-              <h3 class="card-title">🧾 Procedure Request</h3>
-              <div class="split">
-                <div>
-                  <div class="form-grid">
-                    <div class="field span-8">
-                      <label>Procedure Type</label>
-                      <select id="procedureSelect"></select>
-                    </div>
-                    <div class="field span-4">
-                      <label>Pain Score (VAS 0–10)</label>
-                      <select id="painScore">
-                        <option value="">Select...</option>
-                        <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option>
-                        <option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
-                      </select>
-                    </div>
+            <div class="actions">
+              <button class="btn btn-muted" id="backToStep1Btn">← Back</button>
+              <button class="btn" id="toStep3Btn">Next: AI Analysis →</button>
+            </div>
+          </div>
 
-                    <div class="field span-8">
-                      <label>Primary Diagnosis (ICD-10)</label>
-                      <select id="diagnosisSelect"></select>
-                    </div>
-                    <div class="field span-4">
-                      <label>Duration of Symptoms</label>
-                      <select id="durationSelect">
-                        <option value="">Select...</option>
-                        <option>Less than 6 weeks</option>
-                        <option>6–12 weeks</option>
-                        <option>3–6 months</option>
-                        <option>6–12 months</option>
-                        <option>More than 12 months</option>
-                      </select>
-                    </div>
-
-                    <div class="field span-12">
-                      <label>Clinical Notes</label>
-                      <textarea id="notes" placeholder="Include symptoms, neurologic findings, MRI/CT/X-ray results, failed PT, medications, injections, function limits, and anything relevant for the payer review."></textarea>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="info-box">
-                  <h4>Insurance Submission Information</h4>
-                  <div class="muted" id="payerInfoName">Select a payer to see workflow details.</div>
-                  <div style="margin-top:12px" id="payerInfoBody">
-                    <div class="muted">Portal, required documents, and steps will appear here.</div>
-                  </div>
-                </div>
+          <div class="card wizard-page" id="wizard-step-3">
+            <h3 class="card-title">AI Analysis</h3>
+            <div class="split">
+              <div>
+                <div class="section-note">AI / rules analysis</div>
+                <div class="output" id="analysisOutput">No analysis yet.</div>
               </div>
-
-              <div class="actions">
-                <button class="btn btn-secondary" id="analyzeBtn">Analyze Only</button>
-                <button class="btn" id="submitBtn">Save PA Request</button>
+              <div>
+                <div class="section-note">Generated letter</div>
+                <div class="output" id="letterOutput">No letter yet.</div>
               </div>
             </div>
 
-            <div class="card">
-              <h3 class="card-title">Analysis / Output</h3>
-              <div class="split">
-                <div>
-                  <div class="section-note">AI / rules analysis</div>
-                  <div class="output" id="analysisOutput">No analysis yet.</div>
-                </div>
-                <div>
-                  <div class="section-note">Generated letter</div>
-                  <div class="output" id="letterOutput">No letter yet.</div>
-                </div>
+            <div class="actions">
+              <button class="btn btn-muted" id="backToStep2Btn">← Back</button>
+              <button class="btn btn-secondary" id="analyzeBtn">Analyze</button>
+              <button class="btn" id="toStep4Btn">Next: Review & Submit →</button>
+            </div>
+          </div>
+
+          <div class="card wizard-page" id="wizard-step-4">
+            <h3 class="card-title">Review &amp; Submit</h3>
+
+            <div class="review-grid">
+              <div class="review-block">
+                <h4>Patient & Request Summary</h4>
+                <div id="reviewSummary"></div>
               </div>
+
+              <div class="review-block">
+                <h4>Submission Workflow</h4>
+                <div id="reviewPortal"></div>
+              </div>
+            </div>
+
+            <div style="margin-top:18px">
+              <div class="section-note">Ready-to-submit letter</div>
+              <div class="output" id="reviewLetter">No letter yet.</div>
+            </div>
+
+            <div class="actions">
+              <button class="btn btn-muted" id="backToStep3Btn">← Back</button>
+              <button class="btn btn-secondary" id="freshRequestBtn">Start Fresh Request</button>
+              <button class="btn" id="saveBtnLabel">Save PA Request</button>
             </div>
           </div>
         </div>
@@ -521,6 +606,7 @@
                   <th>Diagnosis</th>
                   <th>Status</th>
                   <th>Updated</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="queueBody"></tbody>
@@ -553,34 +639,11 @@
       payers: [],
       diagnosisLibrary: {},
       providers: [],
-      cases: []
+      cases: [],
+      currentStep: 1
     };
 
     function $(id){ return document.getElementById(id); }
-
-    function setView(view){
-      const views = ["dashboard","new-request","queue","payers","settings"];
-      views.forEach(v => {
-        const el = document.getElementById(`view-${v}`);
-        if (el) el.style.display = v === view ? "" : "none";
-      });
-      document.querySelectorAll(".nav-link").forEach(link => {
-        link.classList.toggle("active", link.dataset.view === view);
-      });
-
-      const titles = {
-        "dashboard":"Dashboard",
-        "new-request":"New PA Request",
-        "queue":"PA Queue",
-        "payers":"Payer Criteria",
-        "settings":"Settings"
-      };
-      $("pageTitle").textContent = titles[view] || "SpinePA Agent";
-
-      if (view === "queue") loadCases();
-      if (view === "settings") loadSettings();
-      if (view === "payers") renderPayerDirectory();
-    }
 
     function esc(text){
       return String(text || "")
@@ -600,6 +663,63 @@
       return data;
     }
 
+    function showEditStatus(message="", isWarn=false){
+      const el = $("editStatus");
+      if(!message){
+        el.classList.remove("show");
+        el.textContent = "";
+        return;
+      }
+      el.classList.add("show");
+      el.textContent = message;
+      el.className = "status-box show" + (isWarn ? " warn" : "");
+    }
+
+    function setView(view){
+      const views = ["dashboard","new-request","queue","payers","settings"];
+      views.forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        if (el) el.style.display = v === view ? "" : "none";
+      });
+
+      document.querySelectorAll(".nav-link").forEach(link => {
+        link.classList.toggle("active", link.dataset.view === view);
+      });
+
+      const titles = {
+        "dashboard":"Dashboard",
+        "new-request":"New PA Request",
+        "queue":"PA Queue",
+        "payers":"Payer Criteria",
+        "settings":"Settings"
+      };
+      $("pageTitle").textContent = titles[view] || "SpinePA Agent";
+
+      if (view === "queue") loadCases();
+      if (view === "settings") loadSettings();
+      if (view === "payers") renderPayerDirectory();
+    }
+
+    function setWizardStep(step){
+      state.currentStep = step;
+
+      document.querySelectorAll(".wizard-page").forEach(page => {
+        page.classList.remove("active");
+      });
+      const activePage = document.getElementById(`wizard-step-${step}`);
+      if(activePage) activePage.classList.add("active");
+
+      document.querySelectorAll(".step").forEach(el => {
+        const s = Number(el.dataset.step);
+        el.classList.toggle("active", s === step);
+        el.classList.toggle("done", s < step);
+      });
+
+      if(step === 4){
+        populateReview();
+      }
+    }
+
     function buildPatientName(){
       return `${$("fname").value || ""} ${$("lname").value || ""}`.trim();
     }
@@ -612,7 +732,7 @@
       return state.payers.find(p => p.key === $("payerSelect").value) || null;
     }
 
-    function updateDiagnosisOptions(){
+    function updateDiagnosisOptions(selectedValue=""){
       const select = $("diagnosisSelect");
       select.innerHTML = "";
 
@@ -627,9 +747,11 @@
       select.appendChild(placeholder);
 
       options.forEach(item => {
+        const value = `${item.label} (${item.code})`;
         const opt = document.createElement("option");
-        opt.value = `${item.label} (${item.code})`;
-        opt.textContent = `${item.label} (${item.code})`;
+        opt.value = value;
+        opt.textContent = value;
+        if(selectedValue && selectedValue === value) opt.selected = true;
         select.appendChild(opt);
       });
     }
@@ -666,6 +788,41 @@
       $("providerNpi").value = provider ? (provider.npi || "") : "";
     }
 
+    function clearOutputs(){
+      $("analysisOutput").textContent = "No analysis yet.";
+      $("letterOutput").textContent = "No letter yet.";
+      $("reviewLetter").textContent = "No letter yet.";
+      $("reviewSummary").innerHTML = "";
+      $("reviewPortal").innerHTML = "";
+    }
+
+    function resetForm(){
+      $("currentCaseId").value = "";
+      $("fname").value = "";
+      $("lname").value = "";
+      $("dob").value = "";
+      $("payerSelect").value = "";
+      $("memberId").value = "";
+      $("referringProvider").value = "";
+      $("providerSelect").value = "";
+      $("providerNpi").value = "";
+      $("procedureSelect").value = "";
+      $("painScore").value = "";
+      $("durationSelect").value = "";
+      $("notes").value = "";
+      updateDiagnosisOptions("");
+      updatePayerInfo();
+      clearOutputs();
+      $("saveBtnLabel").textContent = "Save PA Request";
+      showEditStatus("");
+      setWizardStep(1);
+    }
+
+    function startFreshRequest(){
+      resetForm();
+      setView("new-request");
+    }
+
     function casePayload(){
       return {
         patient: buildPatientName(),
@@ -685,6 +842,18 @@
       };
     }
 
+    function basicValidation(){
+      const payload = casePayload();
+      const missing = [];
+      if(!payload.fname) missing.push("Patient first name");
+      if(!payload.lname) missing.push("Patient last name");
+      if(!payload.dob) missing.push("Date of birth");
+      if(!payload.payer) missing.push("Insurance / payer");
+      if(!payload.provider) missing.push("Ordering provider");
+      if(!payload.proc_type) missing.push("Procedure type");
+      return missing;
+    }
+
     function renderAnalysisResult(analysis, portalHelper){
       const missing = (portalHelper?.missing || []).map(item => `- ${item.element}${item.detail ? `: ${item.detail}` : ""}`).join("\n");
       const docs = (portalHelper?.attachments || []).map(x => `- ${x}`).join("\n");
@@ -700,44 +869,85 @@
         `Submission steps:\n${steps || "None listed."}`;
     }
 
+    async function runAnalysis(){
+      const payload = casePayload();
+      const result = await getJson("/analyze", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+      renderAnalysisResult(result.analysis, result.portal_helper);
+
+      const letter = await getJson("/generate-letter", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+      $("letterOutput").textContent = letter.letter || "No letter returned.";
+      $("reviewLetter").textContent = letter.letter || "No letter returned.";
+    }
+
     async function analyzeOnly(){
       try{
-        const payload = casePayload();
-        const result = await getJson("/analyze", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(payload)
-        });
-        renderAnalysisResult(result.analysis, result.portal_helper);
-
-        const letter = await getJson("/generate-letter", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(payload)
-        });
-        $("letterOutput").textContent = letter.letter || "No letter returned.";
+        await runAnalysis();
       }catch(err){
         $("analysisOutput").textContent = `Error: ${err.message}`;
       }
     }
 
-    async function saveCase(){
+    function populateReview(){
+      const payload = casePayload();
+      const payer = currentPayer();
+
+      $("reviewSummary").innerHTML = `
+        <div class="kv"><strong>Patient:</strong> ${esc(payload.patient || "")}</div>
+        <div class="kv"><strong>DOB:</strong> ${esc(payload.dob || "")}</div>
+        <div class="kv"><strong>Payer:</strong> ${esc(payload.payer || "")}</div>
+        <div class="kv"><strong>Member ID:</strong> ${esc(payload.member_id || "")}</div>
+        <div class="kv"><strong>Ordering Provider:</strong> ${esc(payload.provider || "")}</div>
+        <div class="kv"><strong>NPI:</strong> ${esc(payload.provider_npi || "")}</div>
+        <div class="kv"><strong>Procedure:</strong> ${esc(payload.proc_type || "")}</div>
+        <div class="kv"><strong>Diagnosis:</strong> ${esc(payload.diagnosis || "")}</div>
+        <div class="kv"><strong>Pain Score:</strong> ${esc(payload.pain_score || "")}</div>
+        <div class="kv"><strong>Duration:</strong> ${esc(payload.duration || "")}</div>
+      `;
+
+      $("reviewPortal").innerHTML = payer ? `
+        <div class="kv"><strong>Portal:</strong> ${esc(payer.portal_name || "")}</div>
+        <div class="kv"><strong>Link:</strong> <a class="link" href="${esc(payer.portal_url || "#")}" target="_blank" rel="noopener noreferrer">${esc(payer.portal_url || "")}</a></div>
+        <div class="kv"><strong>Fax:</strong> ${esc(payer.fax || "")}</div>
+        <div class="kv"><strong>Notes:</strong> ${esc(payer.notes || "")}</div>
+      ` : `<div class="muted">Select a payer to review submission workflow.</div>`;
+
+      if($("letterOutput").textContent && $("letterOutput").textContent !== "No letter yet."){
+        $("reviewLetter").textContent = $("letterOutput").textContent;
+      }
+    }
+
+    async function saveOrUpdateCase(){
       try{
         const payload = casePayload();
-        await getJson("/submit", {
-          method:"POST",
+        const currentId = $("currentCaseId").value.trim();
+
+        let url = "/submit";
+        let method = "POST";
+
+        if(currentId){
+          url = `/cases/${currentId}`;
+          method = "PUT";
+        }
+
+        await getJson(url, {
+          method,
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(payload)
         });
 
-        $("analysisOutput").textContent = "Case saved successfully.";
-        const letter = await getJson("/generate-letter", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(payload)
-        });
-        $("letterOutput").textContent = letter.letter || "No letter returned.";
         await loadCases();
+
+        showEditStatus(currentId ? `Case #${currentId} updated successfully.` : "New case saved successfully.");
+        $("saveBtnLabel").textContent = "Save PA Request";
+        $("currentCaseId").value = "";
         setView("queue");
       }catch(err){
         $("analysisOutput").textContent = `Error: ${err.message}`;
@@ -752,7 +962,7 @@
         const body = $("queueBody");
 
         if(!state.cases.length){
-          body.innerHTML = `<tr><td colspan="7">No saved cases.</td></tr>`;
+          body.innerHTML = `<tr><td colspan="8">No saved cases.</td></tr>`;
           $("dashboardSummary").textContent = "No cases in the repository yet.";
           return;
         }
@@ -766,14 +976,68 @@
             <td>${esc(c.diagnosis)}</td>
             <td><span class="tag">${esc(c.status)}</span></td>
             <td>${esc(c.updatedAt || c.createdAt || "")}</td>
+            <td>
+              <button class="btn btn-secondary btn-small" onclick="openCase(${Number(c.id)})">Open / Edit</button>
+            </td>
           </tr>
         `).join("");
 
         const recent = state.cases.slice(0,5).map(c => `#${c.id} • ${c.patient} • ${c.payer} • ${c.procType}`).join("\n");
         $("dashboardSummary").textContent = recent || "No cases in the repository yet.";
       }catch(err){
-        $("queueBody").innerHTML = `<tr><td colspan="7">Error: ${esc(err.message)}</td></tr>`;
+        $("queueBody").innerHTML = `<tr><td colspan="8">Error: ${esc(err.message)}</td></tr>`;
         $("dashboardSummary").textContent = `Error loading cases: ${err.message}`;
+      }
+    }
+
+    async function openCase(id){
+      try{
+        const result = await getJson(`/cases/${id}`);
+        const c = result.case || result;
+
+        resetForm();
+
+        $("currentCaseId").value = c.id || id;
+        $("fname").value = c.fname || "";
+        $("lname").value = c.lname || "";
+        $("dob").value = c.dob || "";
+        $("memberId").value = c.memberId || "";
+        $("referringProvider").value = c.referringProvider || "";
+        $("providerNpi").value = c.providerNpi || "";
+        $("painScore").value = c.painScore || "";
+        $("durationSelect").value = c.duration || "";
+        $("notes").value = c.notes || "";
+
+        if(c.provider){
+          $("providerSelect").value = c.provider;
+          if(!$("providerSelect").value && state.providers.length){
+            const found = state.providers.find(p => p.name === c.provider);
+            if(found) $("providerSelect").value = found.name;
+          }
+        }
+
+        if(c.payer){
+          const payer = state.payers.find(p => (p.display_name || "").toLowerCase() === String(c.payer).toLowerCase() || p.key === c.payer);
+          if(payer) $("payerSelect").value = payer.key;
+        }
+
+        if(c.procType){
+          $("procedureSelect").value = c.procType;
+        }
+
+        updateDiagnosisOptions(c.diagnosis || "");
+        updatePayerInfo();
+
+        if(c.diagnosis){
+          $("diagnosisSelect").value = c.diagnosis;
+        }
+
+        $("saveBtnLabel").textContent = "Update PA Request";
+        showEditStatus(`Editing saved case #${id}.`);
+        setView("new-request");
+        setWizardStep(1);
+      }catch(err){
+        alert(`Unable to open case #${id}: ${err.message}`);
       }
     }
 
@@ -811,15 +1075,55 @@
 
     function bindEvents(){
       document.querySelectorAll(".nav-link").forEach(link => {
-        link.addEventListener("click", () => setView(link.dataset.view));
+        link.addEventListener("click", () => {
+          if(link.dataset.view === "new-request"){
+            startFreshRequest();
+          } else {
+            setView(link.dataset.view);
+          }
+        });
       });
 
-      $("newRequestBtn").addEventListener("click", () => setView("new-request"));
-      $("procedureSelect").addEventListener("change", updateDiagnosisOptions);
+      document.querySelectorAll(".step").forEach(stepEl => {
+        stepEl.addEventListener("click", () => {
+          const step = Number(stepEl.dataset.step);
+          setWizardStep(step);
+        });
+      });
+
+      $("newRequestBtn").addEventListener("click", startFreshRequest);
+      $("procedureSelect").addEventListener("change", () => updateDiagnosisOptions(""));
       $("payerSelect").addEventListener("change", updatePayerInfo);
       $("providerSelect").addEventListener("change", updateProviderNpi);
+
+      $("toStep2Btn").addEventListener("click", () => {
+        const missing = basicValidation();
+        if(missing.length){
+          showEditStatus(`Please complete: ${missing.join(", ")}`, true);
+          return;
+        }
+        showEditStatus("");
+        setWizardStep(2);
+      });
+
+      $("backToStep1Btn").addEventListener("click", () => setWizardStep(1));
+      $("toStep3Btn").addEventListener("click", () => setWizardStep(3));
+      $("backToStep2Btn").addEventListener("click", () => setWizardStep(2));
+
       $("analyzeBtn").addEventListener("click", analyzeOnly);
-      $("submitBtn").addEventListener("click", saveCase);
+
+      $("toStep4Btn").addEventListener("click", async () => {
+        try{
+          await runAnalysis();
+        }catch(err){
+          $("analysisOutput").textContent = `Error: ${err.message}`;
+        }
+        setWizardStep(4);
+      });
+
+      $("backToStep3Btn").addEventListener("click", () => setWizardStep(3));
+      $("freshRequestBtn").addEventListener("click", startFreshRequest);
+      $("saveBtnLabel").addEventListener("click", saveOrUpdateCase);
     }
 
     async function initApp(){
@@ -867,7 +1171,7 @@
           providerSelect.appendChild(opt);
         });
 
-        updateDiagnosisOptions();
+        updateDiagnosisOptions("");
         updatePayerInfo();
         renderPayerDirectory();
         await loadCases();
@@ -882,6 +1186,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", initApp);
+    window.openCase = openCase;
   </script>
 </body>
 </html>
