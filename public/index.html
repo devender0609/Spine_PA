@@ -724,7 +724,7 @@
     async function saveCase(){
       try{
         const payload = casePayload();
-        const result = await getJson("/submit", {
+        await getJson("/submit", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(payload)
@@ -788,4 +788,100 @@
             <div class="info-box" style="margin-bottom:14px">
               <h4>${esc(p.display_name || p.key)}</h4>
               <div><strong>Portal:</strong> ${esc(p.portal_name || "")}</div>
-              <
+              <div style="margin:6px 0"><strong>Link:</strong> <a class="link" href="${esc(p.portal_url || "#")}" target="_blank" rel="noopener noreferrer">${esc(p.portal_url || "")}</a></div>
+              <div style="margin-bottom:6px"><strong>Fax:</strong> ${esc(p.fax || "Not listed")}</div>
+              <div style="margin-bottom:10px"><strong>Notes:</strong> ${esc(p.notes || "")}</div>
+              <div><strong>Documents:</strong></div>
+              <ul class="list">${docs || "<li>No document list available.</li>"}</ul>
+              <div style="margin-top:10px"><strong>How to submit:</strong></div>
+              <ul class="list">${steps || "<li>No submission steps available.</li>"}</ul>
+            </div>
+          `;
+        }).join("") || `<div class="muted">No payer directory loaded.</div>`;
+    }
+
+    async function loadSettings(){
+      try{
+        const settings = await getJson("/settings");
+        $("settingsOutput").textContent = JSON.stringify(settings, null, 2);
+      }catch(err){
+        $("settingsOutput").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    function bindEvents(){
+      document.querySelectorAll(".nav-link").forEach(link => {
+        link.addEventListener("click", () => setView(link.dataset.view));
+      });
+
+      $("newRequestBtn").addEventListener("click", () => setView("new-request"));
+      $("procedureSelect").addEventListener("change", updateDiagnosisOptions);
+      $("payerSelect").addEventListener("change", updatePayerInfo);
+      $("providerSelect").addEventListener("change", updateProviderNpi);
+      $("analyzeBtn").addEventListener("click", analyzeOnly);
+      $("submitBtn").addEventListener("click", saveCase);
+    }
+
+    async function initApp(){
+      bindEvents();
+
+      try{
+        const status = await getJson("/status");
+
+        state.status = status;
+        state.procedures = status.procedures || [];
+        state.payers = status.payers || [];
+        state.providers = status.providers || [];
+        state.diagnosisLibrary = status.diagnosis_library || {};
+
+        $("procedureCount").textContent = state.procedures.length;
+        $("payerCount").textContent = state.payers.length;
+        $("providerCount").textContent = state.providers.length;
+        $("savedCases").textContent = "0";
+        $("modePill").textContent = status.has_api_key ? "AI MODE" : "RULES MODE";
+
+        const procSelect = $("procedureSelect");
+        procSelect.innerHTML = `<option value="">Select procedure...</option>`;
+        state.procedures.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.key;
+          opt.textContent = p.description || p.key;
+          procSelect.appendChild(opt);
+        });
+
+        const payerSelect = $("payerSelect");
+        payerSelect.innerHTML = `<option value="">Select payer...</option>`;
+        state.payers.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.key;
+          opt.textContent = p.display_name || p.key;
+          payerSelect.appendChild(opt);
+        });
+
+        const providerSelect = $("providerSelect");
+        providerSelect.innerHTML = `<option value="">Select provider...</option>`;
+        state.providers.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.name;
+          opt.textContent = p.name;
+          providerSelect.appendChild(opt);
+        });
+
+        updateDiagnosisOptions();
+        updatePayerInfo();
+        renderPayerDirectory();
+        await loadCases();
+
+        if(!state.cases.length){
+          $("dashboardSummary").textContent = "System initialized. You can start a new prior authorization request.";
+        }
+      }catch(err){
+        $("dashboardSummary").textContent = `Failed to load backend data: ${err.message}`;
+        $("analysisOutput").textContent = `Initialization error: ${err.message}`;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initApp);
+  </script>
+</body>
+</html>
