@@ -234,6 +234,7 @@
       min-width:0;
     }
     .field{min-width:0}
+    .span-3{grid-column:span 3}
     .span-4{grid-column:span 4}
     .span-6{grid-column:span 6}
     .span-8{grid-column:span 8}
@@ -259,7 +260,7 @@
       font-size:14px;
     }
     textarea{
-      min-height:120px;
+      min-height:110px;
       resize:vertical;
     }
     .split{
@@ -344,7 +345,6 @@
     }
     .kv{margin:6px 0}
     .kv strong{display:inline-block;min-width:150px}
-    .hidden{display:none !important}
     .analysis-panel{
       display:grid;
       grid-template-columns:1fr 1fr;
@@ -394,22 +394,57 @@
       padding:12px;
       margin-top:12px;
     }
+    .choice-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px 14px;
+    }
+    .check-item{
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 12px;
+    }
+    .check-item input{
+      width:auto;
+      margin-top:2px;
+    }
+    .tiny{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:3px;
+    }
+    .upload-box{
+      border:1px dashed #b9c9dd;
+      border-radius:10px;
+      padding:12px;
+      background:#fff;
+    }
+    .file-note{
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
     @media (max-width:1200px){
       .split,.review-grid,.analysis-panel{grid-template-columns:1fr}
       .dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .span-4,.span-6,.span-8{grid-column:span 6}
+      .span-3,.span-4,.span-6,.span-8{grid-column:span 6}
+      .choice-grid{grid-template-columns:1fr}
     }
     @media (max-width:900px){
       .app{grid-template-columns:1fr}
       .dashboard-grid{grid-template-columns:1fr}
       .form-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
-      .span-4,.span-6,.span-8{grid-column:span 6}
+      .span-3,.span-4,.span-6,.span-8{grid-column:span 6}
       .main,.top{padding-left:16px;padding-right:16px}
       .stepper{max-width:none}
     }
     @media (max-width:640px){
       .form-grid{grid-template-columns:1fr}
-      .span-4,.span-6,.span-8,.span-12{grid-column:1/-1}
+      .span-3,.span-4,.span-6,.span-8,.span-12{grid-column:1/-1}
     }
   </style>
 </head>
@@ -571,20 +606,133 @@
 
           <div class="card wizard-page" id="wizard-step-2">
             <h3 class="card-title">Clinical Notes & Supporting Documentation</h3>
+
             <div class="form-grid">
               <div class="field span-12">
                 <label>Clinical Summary</label>
                 <textarea id="notes" placeholder="Overall clinical summary for the case."></textarea>
               </div>
+            </div>
 
-              <div class="field span-6">
-                <label>Conservative Treatment</label>
-                <textarea id="conservativeTreatment" placeholder="PT duration, medications, injections, home exercise program, activity modification, chiropractic care, etc."></textarea>
+            <h3 class="card-title" style="margin-top:24px">Conservative Treatment</h3>
+            <div class="choice-grid">
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Physical therapy"><span><strong>Physical therapy</strong><div class="tiny">Supervised PT program</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Home exercise program"><span><strong>Home exercise program</strong><div class="tiny">Independent exercise plan</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="NSAIDs"><span><strong>NSAIDs</strong><div class="tiny">Ibuprofen, naproxen, etc.</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Oral steroids"><span><strong>Oral steroids</strong><div class="tiny">Short steroid taper</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Neuropathic medication"><span><strong>Neuropathic medication</strong><div class="tiny">Gabapentin / pregabalin</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Muscle relaxant"><span><strong>Muscle relaxant</strong><div class="tiny">Cyclobenzaprine, methocarbamol, etc.</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Activity modification"><span><strong>Activity modification</strong><div class="tiny">Work / lifting / daily activity changes</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Chiropractic care"><span><strong>Chiropractic care</strong><div class="tiny">Manual therapy / adjustments</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Epidural steroid injection"><span><strong>Epidural steroid injection</strong><div class="tiny">Lumbar / cervical ESI</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Facet injection / medial branch block"><span><strong>Facet injection / MBB</strong><div class="tiny">Facet-targeted pain intervention</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="SI joint injection"><span><strong>SI joint injection</strong><div class="tiny">Diagnostic / therapeutic SI injection</div></span></label>
+              <label class="check-item"><input type="checkbox" class="cons-check" value="Bracing"><span><strong>Bracing</strong><div class="tiny">Orthosis / support brace</div></span></label>
+            </div>
+
+            <div class="form-grid" style="margin-top:16px">
+              <div class="field span-3">
+                <label>Total Duration of Conservative Treatment</label>
+                <select id="consDuration">
+                  <option value="">Select...</option>
+                  <option>Less than 6 weeks</option>
+                  <option>6 weeks</option>
+                  <option>6–12 weeks</option>
+                  <option>3–6 months</option>
+                  <option>More than 6 months</option>
+                </select>
+              </div>
+              <div class="field span-3">
+                <label>PT Visits</label>
+                <input id="ptVisits" placeholder="e.g. 8 visits" />
+              </div>
+              <div class="field span-3">
+                <label>Injection Result</label>
+                <select id="consResponse">
+                  <option value="">Select...</option>
+                  <option>No relief</option>
+                  <option>Partial relief</option>
+                  <option>Temporary relief</option>
+                  <option>Relief then recurrence</option>
+                  <option>Worsened symptoms</option>
+                </select>
+              </div>
+              <div class="field span-3">
+                <label>Injection Date / Key Treatment Date</label>
+                <input id="consDate" placeholder="e.g. 02/15/2026" />
+              </div>
+              <div class="field span-12">
+                <label>Other Conservative Treatment Details</label>
+                <textarea id="conservativeOther" placeholder="Any extra details not covered above."></textarea>
+              </div>
+            </div>
+
+            <h3 class="card-title" style="margin-top:24px">Imaging Details</h3>
+            <div class="form-grid">
+              <div class="field span-4">
+                <label>Imaging Type</label>
+                <select id="imagingType" multiple size="6">
+                  <option>MRI</option>
+                  <option>CT</option>
+                  <option>X-ray</option>
+                  <option>Flexion-extension X-ray</option>
+                  <option>Standing scoliosis films / EOS</option>
+                  <option>DEXA / bone density</option>
+                </select>
+              </div>
+              <div class="field span-4">
+                <label>Imaging Availability</label>
+                <select id="imagingStatus">
+                  <option value="">Select...</option>
+                  <option>Uploaded report</option>
+                  <option>Outside report available</option>
+                  <option>Imaging ordered</option>
+                  <option>Imaging complete, summary entered</option>
+                  <option>No imaging yet</option>
+                </select>
+              </div>
+              <div class="field span-4">
+                <label>Severity</label>
+                <select id="imagingSeverity">
+                  <option value="">Select...</option>
+                  <option>Mild</option>
+                  <option>Moderate</option>
+                  <option>Moderate to severe</option>
+                  <option>Severe</option>
+                </select>
+              </div>
+
+              <div class="field span-4">
+                <label>Level(s)</label>
+                <input id="imagingLevels" placeholder="e.g. L4-5, L5-S1 or C5-6" />
+              </div>
+              <div class="field span-8">
+                <label>Structured Findings</label>
+                <select id="imagingFindings" multiple size="7">
+                  <option>Disc herniation</option>
+                  <option>Central stenosis</option>
+                  <option>Foraminal stenosis</option>
+                  <option>Lateral recess stenosis</option>
+                  <option>Spondylolisthesis</option>
+                  <option>Instability</option>
+                  <option>Cord compression</option>
+                  <option>Myelomalacia</option>
+                  <option>Deformity / scoliosis</option>
+                  <option>Compression fracture</option>
+                </select>
               </div>
 
               <div class="field span-6">
-                <label>Imaging Details / Imaging Report</label>
-                <textarea id="imagingSummary" placeholder="MRI/CT/X-ray findings, level(s), stenosis severity, instability, disc herniation, deformity, fracture details, etc."></textarea>
+                <label>Upload Imaging Report</label>
+                <div class="upload-box">
+                  <input id="imagingUpload" type="file" />
+                  <div class="file-note" id="imagingUploadNote">No file selected.</div>
+                </div>
+              </div>
+
+              <div class="field span-6">
+                <label>Additional Imaging Notes</label>
+                <textarea id="imagingOther" placeholder="Any extra imaging detail, outside report comments, or radiology wording."></textarea>
               </div>
             </div>
 
@@ -734,6 +882,130 @@
         .replaceAll("'","&#039;");
     }
 
+    function getSelectedOptions(selectEl){
+      return Array.from(selectEl.selectedOptions || []).map(o => o.value).filter(Boolean);
+    }
+
+    function setMultiSelectByValues(selectEl, values){
+      const wanted = new Set(values || []);
+      Array.from(selectEl.options || []).forEach(opt => {
+        opt.selected = wanted.has(opt.value);
+      });
+    }
+
+    function getCheckedValues(selector){
+      return Array.from(document.querySelectorAll(selector))
+        .filter(el => el.checked)
+        .map(el => el.value);
+    }
+
+    function setCheckedValues(selector, values){
+      const wanted = new Set(values || []);
+      Array.from(document.querySelectorAll(selector)).forEach(el => {
+        el.checked = wanted.has(el.value);
+      });
+    }
+
+    function buildConservativeTreatmentText(){
+      const selected = getCheckedValues(".cons-check");
+      const duration = $("consDuration").value;
+      const visits = $("ptVisits").value.trim();
+      const response = $("consResponse").value;
+      const date = $("consDate").value.trim();
+      const other = $("conservativeOther").value.trim();
+
+      const lines = [];
+      lines.push(`Selected: ${selected.length ? selected.join("; ") : "None selected"}`);
+      lines.push(`Duration: ${duration || "Not specified"}`);
+      lines.push(`PT visits: ${visits || "Not specified"}`);
+      lines.push(`Response: ${response || "Not specified"}`);
+      lines.push(`Key date: ${date || "Not specified"}`);
+      lines.push(`Other: ${other || "None"}`);
+      return lines.join("\n");
+    }
+
+    function parseConservativeTreatmentText(text){
+      const out = {
+        selected: [],
+        duration: "",
+        visits: "",
+        response: "",
+        date: "",
+        other: ""
+      };
+      String(text || "").split("\n").forEach(line => {
+        if(line.startsWith("Selected:")){
+          const value = line.replace("Selected:", "").trim();
+          out.selected = value && value !== "None selected" ? value.split("; ").map(x => x.trim()).filter(Boolean) : [];
+        } else if(line.startsWith("Duration:")){
+          out.duration = line.replace("Duration:", "").trim();
+        } else if(line.startsWith("PT visits:")){
+          out.visits = line.replace("PT visits:", "").trim();
+        } else if(line.startsWith("Response:")){
+          out.response = line.replace("Response:", "").trim();
+        } else if(line.startsWith("Key date:")){
+          out.date = line.replace("Key date:", "").trim();
+        } else if(line.startsWith("Other:")){
+          out.other = line.replace("Other:", "").trim();
+          if(out.other === "None") out.other = "";
+        }
+      });
+      return out;
+    }
+
+    function buildImagingSummaryText(){
+      const types = getSelectedOptions($("imagingType"));
+      const findings = getSelectedOptions($("imagingFindings"));
+      const status = $("imagingStatus").value;
+      const levels = $("imagingLevels").value.trim();
+      const severity = $("imagingSeverity").value;
+      const fileName = $("imagingUpload").files && $("imagingUpload").files[0] ? $("imagingUpload").files[0].name : "";
+      const other = $("imagingOther").value.trim();
+
+      const lines = [];
+      lines.push(`Imaging type: ${types.length ? types.join("; ") : "Not specified"}`);
+      lines.push(`Availability: ${status || "Not specified"}`);
+      lines.push(`Levels: ${levels || "Not specified"}`);
+      lines.push(`Findings: ${findings.length ? findings.join("; ") : "Not specified"}`);
+      lines.push(`Severity: ${severity || "Not specified"}`);
+      lines.push(`Uploaded report: ${fileName || "No file selected"}`);
+      lines.push(`Other: ${other || "None"}`);
+      return lines.join("\n");
+    }
+
+    function parseImagingSummaryText(text){
+      const out = {
+        types: [],
+        status: "",
+        levels: "",
+        findings: [],
+        severity: "",
+        fileName: "",
+        other: ""
+      };
+      String(text || "").split("\n").forEach(line => {
+        if(line.startsWith("Imaging type:")){
+          const value = line.replace("Imaging type:", "").trim();
+          out.types = value && value !== "Not specified" ? value.split("; ").map(x => x.trim()).filter(Boolean) : [];
+        } else if(line.startsWith("Availability:")){
+          out.status = line.replace("Availability:", "").trim();
+        } else if(line.startsWith("Levels:")){
+          out.levels = line.replace("Levels:", "").trim();
+        } else if(line.startsWith("Findings:")){
+          const value = line.replace("Findings:", "").trim();
+          out.findings = value && value !== "Not specified" ? value.split("; ").map(x => x.trim()).filter(Boolean) : [];
+        } else if(line.startsWith("Severity:")){
+          out.severity = line.replace("Severity:", "").trim();
+        } else if(line.startsWith("Uploaded report:")){
+          out.fileName = line.replace("Uploaded report:", "").trim();
+        } else if(line.startsWith("Other:")){
+          out.other = line.replace("Other:", "").trim();
+          if(out.other === "None") out.other = "";
+        }
+      });
+      return out;
+    }
+
     async function getJson(url, options){
       const res = await fetch(url, options);
       const data = await res.json().catch(() => ({}));
@@ -782,10 +1054,7 @@
 
     function setWizardStep(step){
       state.currentStep = step;
-
-      document.querySelectorAll(".wizard-page").forEach(page => {
-        page.classList.remove("active");
-      });
+      document.querySelectorAll(".wizard-page").forEach(page => page.classList.remove("active"));
       const activePage = document.getElementById(`wizard-step-${step}`);
       if(activePage) activePage.classList.add("active");
 
@@ -795,9 +1064,7 @@
         el.classList.toggle("done", s < step);
       });
 
-      if(step === 4){
-        populateReview();
-      }
+      if(step === 4) populateReview();
     }
 
     function buildPatientName(){
@@ -868,6 +1135,11 @@
       $("providerNpi").value = provider ? (provider.npi || "") : "";
     }
 
+    function updateUploadNote(){
+      const file = $("imagingUpload").files && $("imagingUpload").files[0];
+      $("imagingUploadNote").textContent = file ? `Selected: ${file.name}` : "No file selected.";
+    }
+
     function clearOutputs(){
       $("analysisOutput").textContent = "No analysis yet.";
       $("analysisSummaryProfessional").innerHTML = `<span class="muted">No analysis yet.</span>`;
@@ -894,8 +1166,20 @@
       $("painScore").value = "";
       $("durationSelect").value = "";
       $("notes").value = "";
-      $("conservativeTreatment").value = "";
-      $("imagingSummary").value = "";
+      setCheckedValues(".cons-check", []);
+      $("consDuration").value = "";
+      $("ptVisits").value = "";
+      $("consResponse").value = "";
+      $("consDate").value = "";
+      $("conservativeOther").value = "";
+      setMultiSelectByValues($("imagingType"), []);
+      $("imagingStatus").value = "";
+      $("imagingLevels").value = "";
+      setMultiSelectByValues($("imagingFindings"), []);
+      $("imagingSeverity").value = "";
+      $("imagingUpload").value = "";
+      $("imagingOther").value = "";
+      updateUploadNote();
       updateDiagnosisOptions("");
       updatePayerInfo();
       clearOutputs();
@@ -925,8 +1209,8 @@
         pain_score: $("painScore").value,
         duration: $("durationSelect").value,
         notes: $("notes").value.trim(),
-        conservative_treatment: $("conservativeTreatment").value.trim(),
-        imaging_summary: $("imagingSummary").value.trim(),
+        conservative_treatment: buildConservativeTreatmentText(),
+        imaging_summary: buildImagingSummaryText(),
         clinical_note: $("notes").value.trim()
       };
     }
@@ -1028,7 +1312,6 @@
 
       state.lastAnalysis = result.analysis || null;
       state.lastPortalHelper = result.portal_helper || null;
-
       renderAnalysisResult(result.analysis, result.portal_helper);
 
       const letter = await getJson("/generate-letter", {
@@ -1066,8 +1349,8 @@
         <div class="kv"><strong>Diagnosis:</strong> ${esc(payload.diagnosis || "")}</div>
         <div class="kv"><strong>Pain Score:</strong> ${esc(payload.pain_score || "")}</div>
         <div class="kv"><strong>Duration:</strong> ${esc(payload.duration || "")}</div>
-        <div class="kv"><strong>Conservative Treatment:</strong> ${esc(payload.conservative_treatment || "")}</div>
-        <div class="kv"><strong>Imaging Details:</strong> ${esc(payload.imaging_summary || "")}</div>
+        <div class="kv"><strong>Conservative Treatment:</strong> <div style="margin-top:4px">${esc(payload.conservative_treatment || "")}</div></div>
+        <div class="kv"><strong>Imaging Details:</strong> <div style="margin-top:4px">${esc(payload.imaging_summary || "")}</div></div>
       `;
 
       $("reviewPortal").innerHTML = payer ? `
@@ -1102,7 +1385,6 @@
         });
 
         await loadCases();
-
         showEditStatus(currentId ? `Case #${currentId} updated successfully.` : "New case saved successfully.");
         $("saveBtnLabel").textContent = "Save PA Request";
         $("currentCaseId").value = "";
@@ -1166,8 +1448,23 @@
         $("painScore").value = c.painScore || "";
         $("durationSelect").value = c.duration || "";
         $("notes").value = c.notes || "";
-        $("conservativeTreatment").value = c.conservativeTreatment || "";
-        $("imagingSummary").value = c.imagingSummary || "";
+
+        const cons = parseConservativeTreatmentText(c.conservativeTreatment || "");
+        setCheckedValues(".cons-check", cons.selected);
+        $("consDuration").value = cons.duration === "Not specified" ? "" : cons.duration;
+        $("ptVisits").value = cons.visits === "Not specified" ? "" : cons.visits;
+        $("consResponse").value = cons.response === "Not specified" ? "" : cons.response;
+        $("consDate").value = cons.date === "Not specified" ? "" : cons.date;
+        $("conservativeOther").value = cons.other || "";
+
+        const img = parseImagingSummaryText(c.imagingSummary || "");
+        setMultiSelectByValues($("imagingType"), img.types);
+        $("imagingStatus").value = img.status === "Not specified" ? "" : img.status;
+        $("imagingLevels").value = img.levels === "Not specified" ? "" : img.levels;
+        setMultiSelectByValues($("imagingFindings"), img.findings);
+        $("imagingSeverity").value = img.severity === "Not specified" ? "" : img.severity;
+        $("imagingOther").value = img.other || "";
+        $("imagingUploadNote").textContent = img.fileName && img.fileName !== "No file selected" ? `Previously noted: ${img.fileName}` : "No file selected.";
 
         if(c.provider){
           $("providerSelect").value = c.provider;
@@ -1256,6 +1553,7 @@
       $("procedureSelect").addEventListener("change", () => updateDiagnosisOptions(""));
       $("payerSelect").addEventListener("change", updatePayerInfo);
       $("providerSelect").addEventListener("change", updateProviderNpi);
+      $("imagingUpload").addEventListener("change", updateUploadNote);
 
       $("toStep2Btn").addEventListener("click", () => {
         const missing = basicValidation();
@@ -1335,6 +1633,7 @@
 
         updateDiagnosisOptions("");
         updatePayerInfo();
+        updateUploadNote();
         renderPayerDirectory();
         await loadCases();
 
