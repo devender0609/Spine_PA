@@ -343,10 +343,59 @@
       font-size:14px;
     }
     .kv{margin:6px 0}
-    .kv strong{display:inline-block;min-width:140px}
+    .kv strong{display:inline-block;min-width:150px}
     .hidden{display:none !important}
+    .analysis-panel{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:18px;
+    }
+    .analysis-box{
+      background:#f8fbfd;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:16px;
+      min-width:0;
+    }
+    .analysis-box h4{
+      margin:0 0 12px;
+      font-size:14px;
+    }
+    .analysis-list{
+      margin:0;
+      padding-left:18px;
+    }
+    .analysis-list li{
+      margin:6px 0;
+    }
+    .score-pill{
+      display:inline-block;
+      padding:6px 12px;
+      border-radius:999px;
+      background:#ecfdf5;
+      color:#166534;
+      font-weight:700;
+      font-size:13px;
+      margin-right:8px;
+      margin-bottom:8px;
+    }
+    .score-pill.warn{
+      background:#fff7ed;
+      color:#b45309;
+    }
+    .score-pill.info{
+      background:#eef6ff;
+      color:#1d4ed8;
+    }
+    .subcard{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:12px;
+      margin-top:12px;
+    }
     @media (max-width:1200px){
-      .split,.review-grid{grid-template-columns:1fr}
+      .split,.review-grid,.analysis-panel{grid-template-columns:1fr}
       .dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .span-4,.span-6,.span-8{grid-column:span 6}
     }
@@ -521,21 +570,41 @@
           </div>
 
           <div class="card wizard-page" id="wizard-step-2">
-            <h3 class="card-title">Clinical Notes</h3>
-            <div class="split">
-              <div>
-                <div class="field">
-                  <label>Clinical Notes</label>
-                  <textarea id="notes" placeholder="Include symptoms, neurologic findings, MRI/CT/X-ray results, failed PT, medications, injections, function limits, and anything relevant for the payer review."></textarea>
-                </div>
+            <h3 class="card-title">Clinical Notes & Supporting Documentation</h3>
+            <div class="form-grid">
+              <div class="field span-12">
+                <label>Clinical Summary</label>
+                <textarea id="notes" placeholder="Overall clinical summary for the case."></textarea>
               </div>
 
+              <div class="field span-6">
+                <label>Conservative Treatment</label>
+                <textarea id="conservativeTreatment" placeholder="PT duration, medications, injections, home exercise program, activity modification, chiropractic care, etc."></textarea>
+              </div>
+
+              <div class="field span-6">
+                <label>Imaging Details / Imaging Report</label>
+                <textarea id="imagingSummary" placeholder="MRI/CT/X-ray findings, level(s), stenosis severity, instability, disc herniation, deformity, fracture details, etc."></textarea>
+              </div>
+            </div>
+
+            <div class="split" style="margin-top:18px">
               <div class="info-box">
                 <h4>Insurance Submission Information</h4>
                 <div class="muted" id="payerInfoName">Select a payer to see workflow details.</div>
                 <div style="margin-top:12px" id="payerInfoBody">
                   <div class="muted">Portal, required documents, and steps will appear here.</div>
                 </div>
+              </div>
+
+              <div class="info-box">
+                <h4>Documentation Tips</h4>
+                <ul class="list">
+                  <li>Document failed conservative treatment duration clearly.</li>
+                  <li>Include objective imaging findings and affected levels.</li>
+                  <li>State neurologic deficits, weakness, myelopathy, or function loss if present.</li>
+                  <li>Use specific ICD-10 and procedure details whenever possible.</li>
+                </ul>
               </div>
             </div>
 
@@ -547,15 +616,23 @@
 
           <div class="card wizard-page" id="wizard-step-3">
             <h3 class="card-title">AI Analysis</h3>
-            <div class="split">
-              <div>
-                <div class="section-note">AI / rules analysis</div>
-                <div class="output" id="analysisOutput">No analysis yet.</div>
+            <div class="analysis-panel">
+              <div class="analysis-box">
+                <h4>Prior Authorization Readiness</h4>
+                <div id="analysisSummaryProfessional">
+                  <span class="muted">No analysis yet.</span>
+                </div>
               </div>
-              <div>
-                <div class="section-note">Generated letter</div>
+
+              <div class="analysis-box">
+                <h4>Generated Letter</h4>
                 <div class="output" id="letterOutput">No letter yet.</div>
               </div>
+            </div>
+
+            <div style="margin-top:18px" class="analysis-box">
+              <h4>Detailed Analysis</h4>
+              <div class="output" id="analysisOutput">No analysis yet.</div>
             </div>
 
             <div class="actions">
@@ -640,7 +717,10 @@
       diagnosisLibrary: {},
       providers: [],
       cases: [],
-      currentStep: 1
+      currentStep: 1,
+      lastAnalysis: null,
+      lastPortalHelper: null,
+      lastLetter: ""
     };
 
     function $(id){ return document.getElementById(id); }
@@ -790,10 +870,14 @@
 
     function clearOutputs(){
       $("analysisOutput").textContent = "No analysis yet.";
+      $("analysisSummaryProfessional").innerHTML = `<span class="muted">No analysis yet.</span>`;
       $("letterOutput").textContent = "No letter yet.";
       $("reviewLetter").textContent = "No letter yet.";
       $("reviewSummary").innerHTML = "";
       $("reviewPortal").innerHTML = "";
+      state.lastAnalysis = null;
+      state.lastPortalHelper = null;
+      state.lastLetter = "";
     }
 
     function resetForm(){
@@ -810,6 +894,8 @@
       $("painScore").value = "";
       $("durationSelect").value = "";
       $("notes").value = "";
+      $("conservativeTreatment").value = "";
+      $("imagingSummary").value = "";
       updateDiagnosisOptions("");
       updatePayerInfo();
       clearOutputs();
@@ -838,7 +924,10 @@
         diagnosis: $("diagnosisSelect").value,
         pain_score: $("painScore").value,
         duration: $("durationSelect").value,
-        notes: $("notes").value.trim()
+        notes: $("notes").value.trim(),
+        conservative_treatment: $("conservativeTreatment").value.trim(),
+        imaging_summary: $("imagingSummary").value.trim(),
+        clinical_note: $("notes").value.trim()
       };
     }
 
@@ -854,19 +943,79 @@
       return missing;
     }
 
+    function renderProfessionalAnalysis(analysis, portalHelper){
+      const likelihood = analysis?.approval_likelihood || "N/A";
+      const score = analysis?.approval_score ?? "N/A";
+      const summary = analysis?.summary || "No summary returned.";
+      const medNec = analysis?.medical_necessity || "No medical necessity summary returned.";
+      const strengths = Array.isArray(analysis?.strengths) ? analysis.strengths : [];
+      const missing = Array.isArray(portalHelper?.missing) ? portalHelper.missing : [];
+      const docs = Array.isArray(portalHelper?.attachments) ? portalHelper.attachments : [];
+      const steps = Array.isArray(portalHelper?.portal?.how_to_submit) ? portalHelper.portal.how_to_submit : [];
+
+      $("analysisSummaryProfessional").innerHTML = `
+        <div class="score-pill info">Approval Likelihood: ${esc(likelihood)}</div>
+        <div class="score-pill">Support Score: ${esc(score)}</div>
+
+        <div class="subcard">
+          <strong>Executive Summary</strong>
+          <div style="margin-top:8px">${esc(summary)}</div>
+        </div>
+
+        <div class="subcard">
+          <strong>Medical Necessity Assessment</strong>
+          <div style="margin-top:8px">${esc(medNec)}</div>
+        </div>
+
+        <div class="subcard">
+          <strong>Strengths of Submission</strong>
+          <ul class="analysis-list">
+            ${(strengths.length ? strengths : ["No strengths listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>
+
+        <div class="subcard">
+          <strong>Gaps / Missing Elements</strong>
+          <ul class="analysis-list">
+            ${(missing.length ? missing.map(item => `${item.element}${item.detail ? `: ${item.detail}` : ""}`) : ["No missing items listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>
+
+        <div class="subcard">
+          <strong>Recommended Documents</strong>
+          <ul class="analysis-list">
+            ${(docs.length ? docs : ["No documents listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>
+
+        <div class="subcard">
+          <strong>Recommended Submission Steps</strong>
+          <ul class="analysis-list">
+            ${(steps.length ? steps : ["No submission steps listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    }
+
     function renderAnalysisResult(analysis, portalHelper){
       const missing = (portalHelper?.missing || []).map(item => `- ${item.element}${item.detail ? `: ${item.detail}` : ""}`).join("\n");
       const docs = (portalHelper?.attachments || []).map(x => `- ${x}`).join("\n");
       const steps = ((portalHelper?.portal || {}).how_to_submit || []).map(x => `- ${x}`).join("\n");
+      const strengths = (analysis?.strengths || []).map(x => `- ${x}`).join("\n");
 
       $("analysisOutput").textContent =
+        `PRIOR AUTHORIZATION READINESS REPORT\n` +
+        `=================================\n\n` +
         `Approval likelihood: ${analysis?.approval_likelihood || "N/A"}\n` +
         `Approval score: ${analysis?.approval_score ?? "N/A"}\n\n` +
-        `Summary:\n${analysis?.summary || "No summary returned."}\n\n` +
+        `Executive summary:\n${analysis?.summary || "No summary returned."}\n\n` +
         `Medical necessity:\n${analysis?.medical_necessity || "No medical necessity summary returned."}\n\n` +
+        `Strengths:\n${strengths || "No strengths listed."}\n\n` +
         `Missing items:\n${missing || "None listed."}\n\n` +
         `Required / recommended documents:\n${docs || "None listed."}\n\n` +
         `Submission steps:\n${steps || "None listed."}`;
+
+      renderProfessionalAnalysis(analysis, portalHelper);
     }
 
     async function runAnalysis(){
@@ -876,6 +1025,10 @@
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload)
       });
+
+      state.lastAnalysis = result.analysis || null;
+      state.lastPortalHelper = result.portal_helper || null;
+
       renderAnalysisResult(result.analysis, result.portal_helper);
 
       const letter = await getJson("/generate-letter", {
@@ -883,6 +1036,8 @@
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload)
       });
+
+      state.lastLetter = letter.letter || "";
       $("letterOutput").textContent = letter.letter || "No letter returned.";
       $("reviewLetter").textContent = letter.letter || "No letter returned.";
     }
@@ -892,6 +1047,7 @@
         await runAnalysis();
       }catch(err){
         $("analysisOutput").textContent = `Error: ${err.message}`;
+        $("analysisSummaryProfessional").innerHTML = `<span class="warn">Error: ${esc(err.message)}</span>`;
       }
     }
 
@@ -910,6 +1066,8 @@
         <div class="kv"><strong>Diagnosis:</strong> ${esc(payload.diagnosis || "")}</div>
         <div class="kv"><strong>Pain Score:</strong> ${esc(payload.pain_score || "")}</div>
         <div class="kv"><strong>Duration:</strong> ${esc(payload.duration || "")}</div>
+        <div class="kv"><strong>Conservative Treatment:</strong> ${esc(payload.conservative_treatment || "")}</div>
+        <div class="kv"><strong>Imaging Details:</strong> ${esc(payload.imaging_summary || "")}</div>
       `;
 
       $("reviewPortal").innerHTML = payer ? `
@@ -919,8 +1077,8 @@
         <div class="kv"><strong>Notes:</strong> ${esc(payer.notes || "")}</div>
       ` : `<div class="muted">Select a payer to review submission workflow.</div>`;
 
-      if($("letterOutput").textContent && $("letterOutput").textContent !== "No letter yet."){
-        $("reviewLetter").textContent = $("letterOutput").textContent;
+      if(state.lastLetter){
+        $("reviewLetter").textContent = state.lastLetter;
       }
     }
 
@@ -951,6 +1109,7 @@
         setView("queue");
       }catch(err){
         $("analysisOutput").textContent = `Error: ${err.message}`;
+        $("analysisSummaryProfessional").innerHTML = `<span class="warn">Error: ${esc(err.message)}</span>`;
       }
     }
 
@@ -1007,6 +1166,8 @@
         $("painScore").value = c.painScore || "";
         $("durationSelect").value = c.duration || "";
         $("notes").value = c.notes || "";
+        $("conservativeTreatment").value = c.conservativeTreatment || "";
+        $("imagingSummary").value = c.imagingSummary || "";
 
         if(c.provider){
           $("providerSelect").value = c.provider;
@@ -1117,6 +1278,7 @@
           await runAnalysis();
         }catch(err){
           $("analysisOutput").textContent = `Error: ${err.message}`;
+          $("analysisSummaryProfessional").innerHTML = `<span class="warn">Error: ${esc(err.message)}</span>`;
         }
         setWizardStep(4);
       });
@@ -1182,6 +1344,7 @@
       }catch(err){
         $("dashboardSummary").textContent = `Failed to load backend data: ${err.message}`;
         $("analysisOutput").textContent = `Initialization error: ${err.message}`;
+        $("analysisSummaryProfessional").innerHTML = `<span class="warn">Initialization error: ${esc(err.message)}</span>`;
       }
     }
 

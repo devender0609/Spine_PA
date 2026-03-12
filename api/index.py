@@ -612,6 +612,9 @@ def normalize_case_payload(data: dict, config: dict | None = None) -> dict:
         "pain_score": str(data.get("pain_score") or data.get("painScore") or "").strip(),
         "duration": str(data.get("duration") or "").strip(),
         "notes": (data.get("notes") or "").strip(),
+        "clinical_note": (data.get("clinical_note") or data.get("clinicalNote") or data.get("notes") or "").strip(),
+        "conservative_treatment": (data.get("conservative_treatment") or data.get("conservativeTreatment") or "").strip(),
+        "imaging_summary": (data.get("imaging_summary") or data.get("imagingSummary") or "").strip(),
         "criteria_results": data.get("criteria_results") or data.get("criteriaResults") or [],
         "portal_helper": data.get("portal_helper") or data.get("portalHelper") or {},
         "letter": (data.get("letter") or "").strip(),
@@ -632,6 +635,8 @@ def build_structured_letter(data: dict, practice_name: str) -> tuple[str, dict]:
     pain_score = (data.get("pain_score") or data.get("painScore") or "").strip()
     duration = (data.get("duration") or "").strip()
     notes = (data.get("notes") or "").strip()
+    conservative_treatment = (data.get("conservative_treatment") or "").strip()
+    imaging_summary = (data.get("imaging_summary") or "").strip()
     referring_provider = (data.get("referring_provider") or data.get("referringProvider") or "").strip()
     provider = (data.get("provider") or "Treating Physician").strip()
     provider_npi = (data.get("provider_npi") or data.get("providerNpi") or "").strip()
@@ -643,11 +648,20 @@ def build_structured_letter(data: dict, practice_name: str) -> tuple[str, dict]:
     portal = analysis.get("portal") or get_payer_portal(payer)
     today = date.today().strftime("%B %d, %Y")
 
-    clinical_summary = notes if notes else (
+    clinical_summary_parts = []
+    if notes:
+        clinical_summary_parts.append(notes)
+    if conservative_treatment:
+        clinical_summary_parts.append(f"Conservative treatment history: {conservative_treatment}")
+    if imaging_summary:
+        clinical_summary_parts.append(f"Imaging summary: {imaging_summary}")
+
+    clinical_summary = "\n\n".join(clinical_summary_parts) if clinical_summary_parts else (
         f"The patient presents for evaluation related to "
         f"{diagnosis_text or diagnosis_raw or 'the requested service'} with persistent symptoms "
         f"documented in the intake form."
     )
+
     payer_points = analysis.get("payer_rules") or ["See attached clinical records and imaging."]
     document_points = analysis.get("recommended_documents") or procedure.get("required_documents") or [
         "Clinical note",
@@ -775,6 +789,8 @@ def build_package_payload(data: dict, config: dict) -> dict:
             "referring_provider": normalized["referring_provider"],
         },
         "clinical_notes": normalized["notes"],
+        "conservative_treatment": normalized.get("conservative_treatment", ""),
+        "imaging_summary": normalized.get("imaging_summary", ""),
         "criteria_results": criteria_results,
         "analysis": analysis,
         "portal_helper": helper,
@@ -788,6 +804,8 @@ def build_package_payload(data: dict, config: dict) -> dict:
 
 
 def row_to_case(row: sqlite3.Row) -> dict:
+    package_json = json.loads(row["package_json"] or "{}")
+
     return {
         "id": row["id"],
         "caseUid": row["case_uid"] or f"CASE-{row['id']}",
@@ -805,9 +823,11 @@ def row_to_case(row: sqlite3.Row) -> dict:
         "painScore": row["pain_score"],
         "duration": row["duration"],
         "notes": row["notes"],
+        "conservativeTreatment": package_json.get("conservative_treatment", ""),
+        "imagingSummary": package_json.get("imaging_summary", ""),
         "criteriaResults": json.loads(row["criteria_results"] or "[]"),
         "portalHelper": json.loads(row["portal_helper"] or "{}"),
-        "packageJson": json.loads(row["package_json"] or "{}"),
+        "packageJson": package_json,
         "letter": row["letter"],
         "status": row["status"],
         "storageSource": row["storage_source"] or "backend",
@@ -930,8 +950,14 @@ PROCEDURE: {normalized['proc_type']}
 DIAGNOSIS: {normalized['diagnosis']}
 PAIN SCORE: {normalized['pain_score']}
 DURATION: {normalized['duration']}
-CLINICAL NOTES:
+CLINICAL SUMMARY:
 {normalized['notes']}
+
+CONSERVATIVE TREATMENT:
+{normalized.get('conservative_treatment', '')}
+
+IMAGING SUMMARY:
+{normalized.get('imaging_summary', '')}
 """
         ai_json = try_ai_json(
             prompt,
