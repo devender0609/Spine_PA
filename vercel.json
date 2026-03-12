@@ -5,20 +5,16 @@
     { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/favicon.ico", "dest": "/api/index.py" },
     { "src": "/status", "dest": "/api/index.py" },
     { "src": "/settings", "dest": "/api/index.py" },
     { "src": "/knowledge-base", "dest": "/api/index.py" },
-    { "src": "/cases", "dest": "/api/index.py" },
-    { "src": "/cases/(.*)", "dest": "/api/index.py" },
-    { "src": "/submit", "dest": "/api/index.py" },
     { "src": "/analyze", "dest": "/api/index.py" },
     { "src": "/generate-letter", "dest": "/api/index.py" },
     { "src": "/build-package", "dest": "/api/index.py" },
     { "src": "/export-package", "dest": "/api/index.py" },
-
-    { "handle": "filesystem" },
-
+    { "src": "/cases", "dest": "/api/index.py" },
+    { "src": "/cases/(.*)", "dest": "/api/index.py" },
+    { "src": "/submit", "dest": "/api/index.py" },
     { "src": "/", "dest": "/public/index.html" },
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
