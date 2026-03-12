@@ -624,16 +624,6 @@
               <label>Insurance / Payer</label>
               <select id="pt-payer">
                 <option value="">Select payer...</option>
-                <option>Aetna</option>
-                <option>BCBS (Blue Cross Blue Shield)</option>
-                <option>UnitedHealthcare</option>
-                <option>Cigna</option>
-                <option>Humana</option>
-                <option>Medicare</option>
-                <option>Medicare Advantage</option>
-                <option>Medicaid</option>
-                <option>Anthem</option>
-                <option>Other</option>
               </select>
             </div>
             <div class="field"><label>Member ID</label><input id="pt-memberid" type="text"></div>
@@ -655,10 +645,6 @@
               <label>Procedure Type</label>
               <select id="proc-type" onchange="updateProcDetails()">
                 <option value="">Select procedure...</option>
-                <option value="mri">Lumbar MRI (CPT 72148)</option>
-                <option value="esi">Epidural Steroid Injection (CPT 62323 / 64483)</option>
-                <option value="fusion">Lumbar Spinal Fusion (CPT 22612)</option>
-                <option value="pt">Physical Therapy Extension (CPT 97110)</option>
               </select>
             </div>
             <div class="field">
@@ -858,26 +844,27 @@ let providerDirectory = [];
 let repoCases = [];
 let currentCase = null;
 let reviewCaseId = null;
+let PROCEDURE_LIBRARY = [];
+let PAYER_LIBRARY = [];
 
 const CRITERIA = {
-  mri: [
-    { id:'c1', label:'6+ weeks of conservative treatment documented', keywords:['physical therapy','pt','weeks','conservative','home exercise','nsaid'], required:true },
-    { id:'c2', label:'Failure to improve with conservative management', keywords:['no improvement','minimal improvement','failed','persistent','refractory'], required:true },
-    { id:'c3', label:'Specific radicular or neurological symptoms', keywords:['radicular','radiating','radiculopathy','numbness','weakness','sciatica'], required:true },
-    { id:'c4', label:'Specific ICD-10 diagnosis entered', keywords:[], required:true }
+  mri_lumbar: [
+    { id:'c1', label:'Neurologic, radicular, or red-flag indication documented', keywords:['radicular','radiating','radiculopathy','numbness','weakness','sciatica','deficit'], required:true },
+    { id:'c2', label:'Conservative treatment history documented when applicable', keywords:['physical therapy','pt','weeks','conservative','home exercise','nsaid','medication'], required:true },
+    { id:'c3', label:'Specific ICD-10 diagnosis entered', keywords:[], required:true }
   ],
-  esi: [
+  epidural_steroid_injection: [
     { id:'e1', label:'MRI or CT evidence of disc herniation / stenosis', keywords:['mri','stenosis','herniation','ct','foraminal','compression'], required:true },
     { id:'e2', label:'Radicular symptoms documented', keywords:['radicular','dermatomal','leg pain','sciatica','radiating'], required:true },
     { id:'e3', label:'Failed conservative treatment documented', keywords:['physical therapy','pt','nsaid','home exercise','failed'], required:true }
   ],
-  fusion: [
-    { id:'f1', label:'Structural pathology documented', keywords:['spondylolisthesis','instability','stenosis','disc degeneration','deformity'], required:true },
-    { id:'f2', label:'Failed conservative treatment', keywords:['physical therapy','failed','months','injection','conservative'], required:true },
-    { id:'f3', label:'Functional limitation or pain severity documented', keywords:['disabled','difficulty','functional','adl','severe pain'], required:true }
+  lumbar_tlif: [
+    { id:'f1', label:'Structural pathology or instability documented', keywords:['spondylolisthesis','instability','stenosis','disc degeneration','deformity','listhesis'], required:true },
+    { id:'f2', label:'Failed conservative treatment documented', keywords:['physical therapy','failed','months','injection','conservative'], required:true },
+    { id:'f3', label:'Functional limitation or pain severity documented', keywords:['disabled','difficulty','functional','adl','severe pain','odi'], required:true }
   ],
-  pt: [
-    { id:'p1', label:'Functional progress documented', keywords:['progress','improved','functional','mobility'], required:true },
+  physical_therapy: [
+    { id:'p1', label:'Functional deficits or progress documented', keywords:['progress','improved','functional','mobility','adl'], required:true },
     { id:'p2', label:'Goals remaining', keywords:['goal','range of motion','strength','continue'], required:true }
   ]
 };
@@ -908,6 +895,48 @@ function normalizeList(list) {
     }
     return String(item || '').trim();
   }).filter(Boolean);
+}
+
+function getProcedureMeta(procKey) {
+  return PROCEDURE_LIBRARY.find(p => p.key === procKey) || null;
+}
+
+function populateKnowledgeBase(statusData = {}) {
+  PROCEDURE_LIBRARY = Array.isArray(statusData.procedures) ? statusData.procedures : PROCEDURE_LIBRARY;
+  PAYER_LIBRARY = Array.isArray(statusData.payers) ? statusData.payers : PAYER_LIBRARY;
+
+  const payerSelect = document.getElementById('pt-payer');
+  const procSelect = document.getElementById('proc-type');
+  if (payerSelect) {
+    const current = payerSelect.value;
+    payerSelect.innerHTML = '<option value="">Select payer...</option>';
+    (PAYER_LIBRARY.length ? PAYER_LIBRARY : [
+      { key: 'aetna', label: 'Aetna' },
+      { key: 'anthem_bcbs', label: 'Anthem / BCBS' },
+      { key: 'united_healthcare', label: 'UnitedHealthcare' },
+      { key: 'cigna', label: 'Cigna Healthcare' },
+      { key: 'humana', label: 'Humana' },
+      { key: 'medicare', label: 'Medicare' }
+    ]).forEach(p => {
+      const option = document.createElement('option');
+      option.value = p.label || p.key;
+      option.textContent = p.label || p.key;
+      payerSelect.appendChild(option);
+    });
+    payerSelect.value = current || '';
+  }
+  if (procSelect) {
+    const current = procSelect.value;
+    procSelect.innerHTML = '<option value="">Select procedure...</option>';
+    (PROCEDURE_LIBRARY.length ? PROCEDURE_LIBRARY : []).forEach(p => {
+      const option = document.createElement('option');
+      option.value = p.key;
+      const cpt = Array.isArray(p.cpt) && p.cpt.length ? ` (CPT ${p.cpt.join(', ')})` : '';
+      option.textContent = `${p.description || p.key}${cpt}`;
+      procSelect.appendChild(option);
+    });
+    procSelect.value = current || '';
+  }
 }
 
 function validateDOB(dob) {
@@ -992,6 +1021,7 @@ async function checkBackend() {
     BACKEND_READY = true;
     AI_MODE = !!data.has_api_key;
     providerDirectory = Array.isArray(data.providers) ? data.providers : [];
+    populateKnowledgeBase(data);
     loadProviderDirectory(data);
 
     const badge = document.getElementById('sidebar-badge');
@@ -1023,6 +1053,7 @@ async function checkBackend() {
     chip.textContent = '💾 Local Browser Mode';
     alert.className = 'alert warning';
     alert.textContent = 'Backend not reachable. The app will still work and cases will be saved in this browser only.';
+    populateKnowledgeBase({});
   }
 }
 
@@ -1088,7 +1119,7 @@ function showView(id, el = null) {
   }
 
   if (id === 'queue') loadCases();
-  if (id === 'criteria') showCriteria('mri');
+  if (id === 'criteria') showCriteria((PROCEDURE_LIBRARY[0] && PROCEDURE_LIBRARY[0].key) || 'mri_lumbar');
 }
 
 function startNewPA() {
@@ -1182,10 +1213,18 @@ function collectCaseFromForm() {
 
 function analyzeNotes(notes, procType, diagnosis = '') {
   const lower = (notes || '').toLowerCase();
-  const criteria = CRITERIA[procType] || [];
+  const fromStatic = CRITERIA[procType] || [];
+  const procMeta = getProcedureMeta(procType);
+  const generated = procMeta ? (procMeta.required_documents || []).slice(0, 5).map((label, idx) => ({
+    id: `g${idx + 1}`,
+    label,
+    keywords: String(label).toLowerCase().split(/[^a-z0-9]+/).filter(x => x.length > 3),
+    required: true
+  })) : [];
+  const criteria = fromStatic.length ? fromStatic : generated;
   return criteria.map(c => {
-    let found = c.keywords.length ? c.keywords.some(kw => lower.includes(kw)) : false;
-    if (c.id === 'c4') found = looksSpecificIcd(diagnosis);
+    let found = c.keywords && c.keywords.length ? c.keywords.some(kw => lower.includes(kw)) : false;
+    if (String(c.label || '').toLowerCase().includes('icd-10')) found = looksSpecificIcd(diagnosis);
     return { ...c, status: found ? 'met' : (c.required ? 'missing' : 'unmet') };
   });
 }
@@ -1265,7 +1304,8 @@ async function runAIAnalysis() {
     const helper = analyzeData.portal_helper || buildPortalHelperFromResults(localCriteria);
     const analysis = analyzeData.analysis || {};
     const finalLetter = forcePatientBlock(letterData.letter || '', formCase);
-    showResultsFromData(formCase, localCriteria, helper, analysis, finalLetter);
+    const results = Array.isArray(analyzeData.criteria_results) && analyzeData.criteria_results.length ? analyzeData.criteria_results : localCriteria;
+    showResultsFromData(formCase, results, helper, analysis, finalLetter);
   } catch (e) {
     alert('AI analysis failed. Falling back to rule-based draft.');
     showResults();
@@ -1360,6 +1400,9 @@ function buildPortalHelperHtml(helper) {
   const missing = normalizeList(helper.missing || []);
   const attachments = normalizeList(helper.attachments || []);
   const nextSteps = normalizeList(helper.next_steps || helper.nextSteps || []);
+  const payerRules = normalizeList(helper.payer_rules || helper.payerRules || []);
+  const denial = helper.denial_risk || helper.denialRisk || {};
+  const portal = helper.portal || {};
   const ready = String(helper.status || '').toLowerCase().includes('ready');
 
   return `
@@ -1367,6 +1410,13 @@ function buildPortalHelperHtml(helper) {
       <div class="helper-box">
         <div class="helper-title">Submission Readiness</div>
         <div class="helper-big ${ready ? 'ready' : 'review'}">${escapeHtml(helper.status || '')}</div>
+        ${denial.level ? `<div style="margin-top:8px;color:var(--muted);font-size:12px;">Denial risk: <strong>${escapeHtml(denial.level)}</strong></div>` : ''}
+      </div>
+      <div class="helper-box">
+        <div class="helper-title">Submission Pathway</div>
+        <div><strong>${escapeHtml(portal.portal_name || 'Payer portal')}</strong></div>
+        ${portal.portal_url ? `<div style="margin-top:6px;"><a href="${escapeHtml(portal.portal_url)}" target="_blank" rel="noopener">Open payer portal</a></div>` : ''}
+        ${portal.notes ? `<div style="margin-top:8px;color:var(--muted);font-size:12px;">${escapeHtml(portal.notes)}</div>` : ''}
       </div>
       <div class="helper-box">
         <div class="helper-title">Recommended Attachments</div>
@@ -1375,6 +1425,10 @@ function buildPortalHelperHtml(helper) {
       <div class="helper-box">
         <div class="helper-title">Missing Required Items</div>
         ${missing.length ? `<ul>${missing.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<div>No required gaps detected.</div>'}
+      </div>
+      <div class="helper-box">
+        <div class="helper-title">Payer Rules / Notes</div>
+        ${payerRules.length ? `<ul>${payerRules.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : 'No payer-specific notes returned.'}
       </div>
       <div class="helper-box">
         <div class="helper-title">Next Steps</div>
@@ -1798,21 +1852,20 @@ function copyLetter() {
 }
 
 function showCriteria(procType) {
-  const container = document.getElementById('criteria-content');
-  const all = ['mri','esi','fusion','pt'];
-  const buttons = all.map(t => `<button class="btn ${t === procType ? 'btn-primary' : 'btn-outline'}" onclick="showCriteria('${t}')" style="margin-right:8px;margin-bottom:10px;">${escapeHtml(t.toUpperCase())}</button>`).join('');
-  const rows = (CRITERIA[procType] || []).map(c => `
+  const all = PROCEDURE_LIBRARY.length ? PROCEDURE_LIBRARY.map(p => p.key).slice(0, 12) : Object.keys(CRITERIA);
+  const buttons = all.map(t => `<button class="btn ${t === procType ? 'btn-primary' : 'btn-outline'}" onclick="showCriteria('${t}')" style="margin-right:8px;margin-bottom:10px;">${escapeHtml((getProcedureMeta(t)?.description || t).slice(0, 28))}</button>`).join('');
+  const rows = (CRITERIA[procType] || analyzeNotes('', procType, '')).map(c => `
     <tr>
-      <td>${escapeHtml(c.label)}</td>
-      <td>${c.required ? 'Required' : 'Supportive'}</td>
-      <td>${escapeHtml((c.keywords || []).join(', ') || 'Diagnosis field')}</td>
+      <td style="padding:10px;border-top:1px solid var(--border);font-weight:600;">${escapeHtml(c.label)}</td>
+      <td style="padding:10px;border-top:1px solid var(--border);color:var(--muted);">${c.required ? 'Required' : 'Supportive'}</td>
     </tr>
   `).join('');
-  container.innerHTML = `
+  const meta = getProcedureMeta(procType);
+  document.getElementById('criteria-content').innerHTML = `
     <div style="margin-bottom:12px;">${buttons}</div>
-    <div class="alert info">These are structured reference checks used by the app to estimate documentation readiness.</div>
-    <table class="queue-table">
-      <thead><tr><th>Criterion</th><th>Type</th><th>Keywords / Source</th></tr></thead>
+    ${meta ? `<div class="alert info" style="margin-bottom:14px;">${escapeHtml(meta.description || procType)}${Array.isArray(meta.cpt) && meta.cpt.length ? ` • CPT ${escapeHtml(meta.cpt.join(', '))}` : ''}</div>` : ''}
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr><th style="text-align:left;padding:10px;background:#f8fafc;">Typical requirement / document</th><th style="text-align:left;padding:10px;background:#f8fafc;">Type</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
