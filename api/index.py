@@ -4,8 +4,13 @@ import json
 import os
 import re
 import sqlite3
+import sys
 from datetime import date, datetime
 from pathlib import Path
+
+API_DIR = Path(__file__).resolve().parent
+if str(API_DIR) not in sys.path:
+    sys.path.insert(0, str(API_DIR))
 
 try:
     import anthropic
@@ -23,6 +28,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = ROOT_DIR / "public"
 DB_FILE = Path(os.environ.get("SPINEPA_DB_FILE", "/tmp/spinepa_cases.db"))
 CONFIG_FILE = ROOT_DIR / "config.json"
+
+os.makedirs("/tmp", exist_ok=True)
 
 app = Flask(__name__, static_folder=str(PUBLIC_DIR), static_url_path="")
 CORS(app)
@@ -92,7 +99,13 @@ def load_providers() -> list[dict]:
     for key, value in os.environ.items():
         if key.startswith("PROVIDER_NPI_") and value:
             suffix = key.replace("PROVIDER_NPI_", "", 1)
-            providers.append({"key": slug(suffix), "name": title_from_suffix(suffix), "npi": str(value).strip()})
+            providers.append(
+                {
+                    "key": slug(suffix),
+                    "name": title_from_suffix(suffix),
+                    "npi": str(value).strip(),
+                }
+            )
     providers.sort(key=lambda x: x["name"].lower())
     return providers
 
@@ -100,16 +113,19 @@ def load_providers() -> list[dict]:
 def resolve_npi(provider_name: str, providers: list[dict]) -> str:
     if os.environ.get("PROVIDER_NPI"):
         return os.environ["PROVIDER_NPI"].strip()
+
     wanted = slug(provider_name)
     for provider in providers:
         if provider["key"] == wanted:
             return provider["npi"]
+
     parts = (provider_name or "").strip().split()
     if parts:
         last = slug(parts[-1])
         for provider in providers:
             if provider["key"] == last:
                 return provider["npi"]
+
     return ""
 
 
@@ -153,6 +169,7 @@ def conservative_analysis(data: dict) -> dict:
 def try_ai_json(prompt: str, api_key: str, model_name: str) -> dict | None:
     if anthropic is None:
         return None
+
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
@@ -265,14 +282,25 @@ def build_structured_letter(data: dict, practice_name: str) -> tuple[str, dict]:
     portal = analysis.get("portal") or get_payer_portal(payer)
     today = date.today().strftime("%B %d, %Y")
 
-    clinical_summary = notes if notes else f"The patient presents for evaluation related to {diagnosis_text or diagnosis_raw or 'the requested service'} with persistent symptoms documented in the intake form."
+    clinical_summary = notes if notes else (
+        f"The patient presents for evaluation related to "
+        f"{diagnosis_text or diagnosis_raw or 'the requested service'} with persistent symptoms "
+        f"documented in the intake form."
+    )
     payer_points = analysis.get("payer_rules") or ["See attached clinical records and imaging."]
-    document_points = analysis.get("recommended_documents") or procedure.get("required_documents") or ["Clinical note", "Imaging report"]
+    document_points = analysis.get("recommended_documents") or procedure.get("required_documents") or [
+        "Clinical note",
+        "Imaging report",
+    ]
 
     medical_necessity = (
-        f"{proc_name} is requested for the diagnosis of {diagnosis_text or diagnosis_raw or '[Diagnosis Not Provided]'}. "
-        f"Current documentation reflects symptom duration of {duration or 'not specified'} and pain severity of {pain_score or 'not specified'}/10. "
-        f"Structured payer-readiness review estimates an approval support score of {analysis.get('approval_score', 'N/A')}% with {analysis.get('approval_likelihood', 'moderate')} likelihood if the missing items below are addressed."
+        f"{proc_name} is requested for the diagnosis of "
+        f"{diagnosis_text or diagnosis_raw or '[Diagnosis Not Provided]'}. "
+        f"Current documentation reflects symptom duration of {duration or 'not specified'} "
+        f"and pain severity of {pain_score or 'not specified'}/10. "
+        f"Structured payer-readiness review estimates an approval support score of "
+        f"{analysis.get('approval_score', 'N/A')}% with "
+        f"{analysis.get('approval_likelihood', 'moderate')} likelihood if the missing items below are addressed."
     )
 
     letter = f"""# PRIOR AUTHORIZATION REQUEST LETTER
@@ -316,11 +344,11 @@ Practice Name: {practice_name}
 
 ## 5. PAYER-SPECIFIC SUPPORTING POINTS
 
-{"\n".join(f"- {item}" for item in payer_points)}
+{"".join(f"- {item}\n" for item in payer_points)}
 
 ## 6. ATTACHED / EXPECTED SUPPORTING DOCUMENTS
 
-{"\n".join(f"- {item}" for item in document_points)}
+{"".join(f"- {item}\n" for item in document_points)}
 
 ## 7. SUBMISSION PATHWAY
 
@@ -432,6 +460,14 @@ def home():
     return send_from_directory(PUBLIC_DIR, "index.html")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    target = PUBLIC_DIR / "favicon.ico"
+    if target.exists():
+        return send_from_directory(PUBLIC_DIR, "favicon.ico")
+    return ("", 204)
+
+
 @app.route("/<path:path>")
 def static_files(path: str):
     target = PUBLIC_DIR / path
@@ -495,7 +531,7 @@ def analyze():
         prompt = f"""
 You are a medical prior authorization specialist.
 Analyze the following request and return JSON with keys: summary, medical_necessity, approval_likelihood, approval_score, strengths, missing_elements.
-For missing_elements, return a list of objects with keys \"element\" and \"detail\".
+For missing_elements, return a list of objects with keys "element" and "detail".
 Do not change patient demographic values.
 
 PATIENT: {normalized['patient']}
