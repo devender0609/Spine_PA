@@ -22,7 +22,7 @@ from flask_cors import CORS
 
 from criteria_engine import evaluate_case, has_specific_icd, normalize_diagnosis_and_icd
 from procedures import PROCEDURES, canonical_procedure_key, get_procedure
-from submission_portals import PAYER_PORTALS, get_payer_portal
+from submission_portals import PAYER_PORTALS as BASE_PAYER_PORTALS, get_payer_portal as base_get_payer_portal
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = ROOT_DIR / "public"
@@ -33,6 +33,298 @@ os.makedirs("/tmp", exist_ok=True)
 
 app = Flask(__name__, static_folder=str(PUBLIC_DIR), static_url_path="")
 CORS(app)
+
+
+EXTRA_PAYER_PORTALS = {
+    "anthem": {
+        "display_name": "Anthem / Elevance",
+        "portal_name": "Availity / Anthem Provider",
+        "portal_url": "https://www.anthem.com/provider",
+        "fax": "Varies by plan and state",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Neurologic exam",
+            "Conservative treatment records",
+        ],
+        "how_to_submit": [
+            "Verify member plan and prior authorization policy.",
+            "Submit through Anthem provider workflow or linked clearinghouse.",
+            "Upload clinical notes, imaging, and prior conservative treatment documentation.",
+        ],
+        "notes": "Requirements may vary by state plan and vendor.",
+    },
+    "bcbs": {
+        "display_name": "Blue Cross Blue Shield",
+        "portal_name": "Availity / BCBS Provider Workflow",
+        "portal_url": "https://www.availity.com",
+        "fax": "Varies by state plan",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Neurologic exam",
+            "Prior treatment documentation",
+        ],
+        "how_to_submit": [
+            "Confirm the exact BCBS state plan.",
+            "Use plan-specific PA workflow, often through Availity.",
+            "Include full clinical packet on the first submission.",
+        ],
+        "notes": "BCBS requirements are highly plan specific.",
+    },
+    "uhc": {
+        "display_name": "UnitedHealthcare",
+        "portal_name": "UHC Provider Portal",
+        "portal_url": "https://www.uhcprovider.com",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Neurologic exam",
+            "Conservative treatment history",
+        ],
+        "how_to_submit": [
+            "Review current UHC authorization requirements.",
+            "Submit through the UHC provider portal.",
+            "Attach documentation showing diagnosis, symptoms, imaging, and failed nonoperative care.",
+        ],
+        "notes": "Rules can vary by member plan and delegated vendor.",
+    },
+    "aetna": {
+        "display_name": "Aetna",
+        "portal_name": "Availity / Aetna Provider",
+        "portal_url": "https://www.aetna.com/health-care-professionals.html",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "PT or medication history",
+            "Neurologic findings",
+        ],
+        "how_to_submit": [
+            "Review Aetna procedure policy first.",
+            "Submit through the Aetna provider workflow.",
+            "Upload supporting records and any failed conservative treatment documentation.",
+        ],
+        "notes": "Some requests are managed through delegated utilization vendors.",
+    },
+    "cigna": {
+        "display_name": "Cigna",
+        "portal_name": "Cigna for Health Care Professionals",
+        "portal_url": "https://cignaforhcp.cigna.com",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Prior conservative treatment documentation",
+            "Procedure request details",
+        ],
+        "how_to_submit": [
+            "Confirm if pre-certification is required for the member plan.",
+            "Submit through the Cigna provider portal.",
+            "Attach clinical note, imaging, diagnosis, and prior nonoperative care details.",
+        ],
+        "notes": "Plan and service site can change requirements.",
+    },
+    "humana": {
+        "display_name": "Humana",
+        "portal_name": "Availity / Humana Provider",
+        "portal_url": "https://www.humana.com/provider",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Neurologic findings",
+            "Failed conservative treatment records",
+        ],
+        "how_to_submit": [
+            "Check prior authorization list for the member plan.",
+            "Submit through Humana provider workflow.",
+            "Attach all supporting records up front.",
+        ],
+        "notes": "Medicare Advantage plans may use separate workflows.",
+    },
+    "medicare": {
+        "display_name": "Medicare",
+        "portal_name": "Medicare / MAC Guidance",
+        "portal_url": "https://www.cms.gov",
+        "fax": "Contractor specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Objective exam findings",
+            "Procedure details",
+        ],
+        "how_to_submit": [
+            "Check local MAC coverage policy and any prior authorization requirement.",
+            "Follow contractor-specific workflow if authorization is required.",
+            "Keep full supporting packet available for medical review.",
+        ],
+        "notes": "Requirements vary by contractor and service type.",
+    },
+    "tricare": {
+        "display_name": "TRICARE",
+        "portal_name": "TRICARE Provider Portal",
+        "portal_url": "https://www.tricare.mil",
+        "fax": "Region specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Referral if required",
+            "Conservative treatment history",
+        ],
+        "how_to_submit": [
+            "Confirm region-specific authorization policy.",
+            "Submit via regional contractor workflow.",
+            "Attach referral and full supporting clinical records.",
+        ],
+        "notes": "Requirements vary by TRICARE region and service.",
+    },
+    "kaiser": {
+        "display_name": "Kaiser Permanente",
+        "portal_name": "Kaiser Referrals / Authorizations",
+        "portal_url": "https://healthy.kaiserpermanente.org",
+        "fax": "Region specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Referral / internal authorization details",
+            "Prior treatment history",
+        ],
+        "how_to_submit": [
+            "Follow regional Kaiser referral and authorization workflow.",
+            "Confirm any internal specialist approval requirement.",
+            "Upload all clinical records and imaging.",
+        ],
+        "notes": "Workflows differ significantly by Kaiser region.",
+    },
+    "molina": {
+        "display_name": "Molina Healthcare",
+        "portal_name": "Molina Provider Portal",
+        "portal_url": "https://provider.molinahealthcare.com",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Neurologic exam",
+            "Conservative care documentation",
+        ],
+        "how_to_submit": [
+            "Verify service and plan prior authorization requirement.",
+            "Submit through Molina provider portal.",
+            "Attach full supporting clinical packet.",
+        ],
+        "notes": "Medicaid rules can be state specific.",
+    },
+    "centene": {
+        "display_name": "Centene / Ambetter",
+        "portal_name": "Centene Provider Resources",
+        "portal_url": "https://www.centene.com/providers.html",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Prior treatment history",
+            "Procedure details",
+        ],
+        "how_to_submit": [
+            "Confirm the exact Centene-affiliated plan.",
+            "Use the plan-specific provider portal or utilization vendor.",
+            "Upload records showing diagnosis, imaging, symptoms, and failed nonoperative care.",
+        ],
+        "notes": "Use the exact health plan, not just the parent brand.",
+    },
+    "oscar": {
+        "display_name": "Oscar Health",
+        "portal_name": "Oscar Provider Portal",
+        "portal_url": "https://www.hioscar.com/providers",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Treatment history",
+            "Procedure details",
+        ],
+        "how_to_submit": [
+            "Review current authorization rules for the member plan.",
+            "Submit through Oscar provider workflow.",
+            "Attach diagnosis, imaging, and prior treatment documentation.",
+        ],
+        "notes": "Coverage requirements may differ by market.",
+    },
+    "ambetter": {
+        "display_name": "Ambetter",
+        "portal_name": "Ambetter Provider Resources",
+        "portal_url": "https://www.ambetterhealth.com/providers.html",
+        "fax": "Plan specific",
+        "documents_required": [
+            "Clinical note",
+            "Imaging report",
+            "Prior conservative treatment history",
+            "Procedure request details",
+        ],
+        "how_to_submit": [
+            "Verify the state-specific Ambetter plan.",
+            "Submit using the plan portal or delegated vendor.",
+            "Attach all supporting clinical documents.",
+        ],
+        "notes": "State plan differences are common.",
+    },
+}
+
+
+DIAGNOSIS_LIBRARY = {
+    "lumbar": [
+        {"label": "Lumbar radiculopathy", "code": "M54.16"},
+        {"label": "Lumbar disc herniation", "code": "M51.26"},
+        {"label": "Lumbar spinal stenosis", "code": "M48.061"},
+        {"label": "Degenerative disc disease, lumbar", "code": "M51.36"},
+        {"label": "Spondylolisthesis, lumbar region", "code": "M43.16"},
+        {"label": "Low back pain", "code": "M54.50"},
+    ],
+    "cervical": [
+        {"label": "Cervical radiculopathy", "code": "M54.12"},
+        {"label": "Cervical myelopathy", "code": "M47.12"},
+        {"label": "Cervical disc disorder with radiculopathy", "code": "M50.10"},
+        {"label": "Cervical spinal stenosis", "code": "M48.02"},
+        {"label": "Cervical spondylosis", "code": "M47.812"},
+        {"label": "Cervicalgia", "code": "M54.2"},
+    ],
+    "thoracic": [
+        {"label": "Thoracic radiculopathy", "code": "M54.14"},
+        {"label": "Thoracic disc disorder", "code": "M51.24"},
+        {"label": "Thoracic spondylosis with myelopathy", "code": "M47.14"},
+        {"label": "Thoracic spinal stenosis", "code": "M48.04"},
+        {"label": "Thoracic pain", "code": "M54.6"},
+    ],
+    "deformity": [
+        {"label": "Scoliosis, unspecified", "code": "M41.9"},
+        {"label": "Other secondary scoliosis", "code": "M41.50"},
+        {"label": "Kyphosis, thoracic region", "code": "M40.204"},
+        {"label": "Postural kyphosis", "code": "M40.00"},
+        {"label": "Spinal deformity / imbalance", "code": "M43.8X9"},
+    ],
+    "fracture": [
+        {"label": "Compression fracture of vertebra", "code": "M48.50XA"},
+        {"label": "Collapsed vertebra, not elsewhere classified", "code": "M48.50XA"},
+        {"label": "Age-related osteoporosis with current pathological fracture", "code": "M80.08XA"},
+    ],
+    "pelvis": [
+        {"label": "Sacroiliitis", "code": "M46.1"},
+        {"label": "Sacrococcygeal disorders, not elsewhere classified", "code": "M53.3"},
+        {"label": "SI joint dysfunction", "code": "M53.3"},
+    ],
+    "pain": [
+        {"label": "Chronic pain syndrome", "code": "G89.4"},
+        {"label": "Postlaminectomy syndrome", "code": "M96.1"},
+        {"label": "Other chronic postprocedural pain", "code": "G89.28"},
+        {"label": "Neuralgia and neuritis, unspecified", "code": "M79.2"},
+    ],
+    "generic": [
+        {"label": "Other intervertebral disc degeneration", "code": "M51.30"},
+        {"label": "Back pain, unspecified", "code": "M54.9"},
+    ],
+}
 
 
 def slug(value: str) -> str:
@@ -46,6 +338,73 @@ def title_from_suffix(suffix: str) -> str:
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def payer_key_from_name(payer_name: str) -> str:
+    value = (payer_name or "").strip().lower()
+    if not value:
+        return "generic"
+    mapping = {
+        "unitedhealthcare": "uhc",
+        "united healthcare": "uhc",
+        "uhc": "uhc",
+        "aetna": "aetna",
+        "cigna": "cigna",
+        "humana": "humana",
+        "medicare": "medicare",
+        "tricare": "tricare",
+        "kaiser": "kaiser",
+        "kaiser permanente": "kaiser",
+        "molina": "molina",
+        "molina healthcare": "molina",
+        "centene": "centene",
+        "ambetter": "ambetter",
+        "anthem": "anthem",
+        "bcbs": "bcbs",
+        "blue cross blue shield": "bcbs",
+        "oscar": "oscar",
+        "oscar health": "oscar",
+    }
+    return mapping.get(value, re.sub(r"[^a-z0-9]+", "_", value).strip("_") or "generic")
+
+
+def all_payer_portals() -> dict:
+    merged = {}
+    for key, value in BASE_PAYER_PORTALS.items():
+        merged[key] = value
+    for key, value in EXTRA_PAYER_PORTALS.items():
+        merged[key] = value
+    return merged
+
+
+def get_payer_portal(payer_name: str) -> dict:
+    key = payer_key_from_name(payer_name)
+    merged = all_payer_portals()
+    if key in merged:
+        return merged[key]
+    try:
+        portal = base_get_payer_portal(payer_name)
+        if portal:
+            return portal
+    except Exception:
+        pass
+    return merged.get("generic", {"display_name": payer_name or "Generic Payer"})
+
+
+def procedure_diagnosis_options(proc_type: str) -> list[dict]:
+    procedure = get_procedure(proc_type)
+    region = (procedure.get("region") or "").lower()
+    category = (procedure.get("category") or "").lower()
+
+    if category == "deformity":
+        return DIAGNOSIS_LIBRARY["deformity"]
+    if category == "fracture":
+        return DIAGNOSIS_LIBRARY["fracture"]
+    if region in DIAGNOSIS_LIBRARY:
+        return DIAGNOSIS_LIBRARY[region]
+    if region == "thoracolumbar":
+        return DIAGNOSIS_LIBRARY["thoracic"] + DIAGNOSIS_LIBRARY["lumbar"]
+    return DIAGNOSIS_LIBRARY["generic"]
 
 
 def get_conn() -> sqlite3.Connection:
@@ -163,7 +522,9 @@ def proc_label(proc_type: str) -> str:
 
 
 def conservative_analysis(data: dict) -> dict:
-    return evaluate_case(data)
+    analysis = evaluate_case(data)
+    analysis["portal"] = get_payer_portal(data.get("payer") or "")
+    return analysis
 
 
 def try_ai_json(prompt: str, api_key: str, model_name: str) -> dict | None:
@@ -479,6 +840,7 @@ def static_files(path: str):
 @app.route("/status")
 def status():
     config = load_config()
+    merged_payers = all_payer_portals()
     return jsonify(
         {
             "running": True,
@@ -489,8 +851,16 @@ def status():
             "providers": config.get("providers", []),
             "storage_mode": "ephemeral_backend_sqlite",
             "db_file": str(DB_FILE),
-            "procedures": [{"key": k, **v} for k, v in PROCEDURES.items()],
-            "payers": [{"key": k, **v} for k, v in PAYER_PORTALS.items() if k != "generic"],
+            "procedures": [
+                {
+                    "key": k,
+                    **v,
+                    "diagnosis_options": procedure_diagnosis_options(k),
+                }
+                for k, v in PROCEDURES.items()
+            ],
+            "payers": [{"key": k, **v} for k, v in merged_payers.items() if k != "generic"],
+            "diagnosis_library": DIAGNOSIS_LIBRARY,
         }
     )
 
@@ -498,24 +868,42 @@ def status():
 @app.route("/settings")
 def settings():
     config = load_config()
+    merged_payers = all_payer_portals()
     return jsonify(
         {
             "practice_name": config.get("practice_name", "Spine Clinic"),
             "provider_name": config.get("provider_name", "Treating Physician"),
             "has_api_key": bool(config.get("api_key")),
             "providers": config.get("providers", []),
-            "procedures": [{"key": k, **v} for k, v in PROCEDURES.items()],
-            "payers": [{"key": k, **v} for k, v in PAYER_PORTALS.items() if k != "generic"],
+            "procedures": [
+                {
+                    "key": k,
+                    **v,
+                    "diagnosis_options": procedure_diagnosis_options(k),
+                }
+                for k, v in PROCEDURES.items()
+            ],
+            "payers": [{"key": k, **v} for k, v in merged_payers.items() if k != "generic"],
+            "diagnosis_library": DIAGNOSIS_LIBRARY,
         }
     )
 
 
 @app.route("/knowledge-base")
 def knowledge_base():
+    merged_payers = all_payer_portals()
     return jsonify(
         {
-            "procedures": [{"key": k, **v} for k, v in PROCEDURES.items()],
-            "payers": [{"key": k, **v} for k, v in PAYER_PORTALS.items()],
+            "procedures": [
+                {
+                    "key": k,
+                    **v,
+                    "diagnosis_options": procedure_diagnosis_options(k),
+                }
+                for k, v in PROCEDURES.items()
+            ],
+            "payers": [{"key": k, **v} for k, v in merged_payers.items()],
+            "diagnosis_library": DIAGNOSIS_LIBRARY,
         }
     )
 
@@ -552,6 +940,7 @@ CLINICAL NOTES:
         )
         if isinstance(ai_json, dict):
             analysis = {**analysis, **ai_json}
+            analysis["portal"] = get_payer_portal(normalized.get("payer") or "")
 
     portal_helper = build_portal_helper(normalized, analysis)
     return jsonify(
@@ -626,6 +1015,7 @@ def get_case(case_id: int):
     return jsonify({"case": row_to_case(row)})
 
 
+@app.route("/submit", methods=["POST"])
 @app.route("/cases", methods=["POST"])
 def create_case():
     config = load_config()
