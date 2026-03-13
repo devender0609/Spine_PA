@@ -379,14 +379,6 @@
       margin-right:8px;
       margin-bottom:8px;
     }
-    .score-pill.warn{
-      background:#fff7ed;
-      color:#b45309;
-    }
-    .score-pill.info{
-      background:#eef6ff;
-      color:#1d4ed8;
-    }
     .score-pill.green{
       background:#ecfdf5;
       color:#166534;
@@ -771,14 +763,6 @@
                 <label>Additional Imaging Notes</label>
                 <textarea id="imagingOther" placeholder="Any extra imaging detail, outside report comments, or radiology wording."></textarea>
               </div>
-
-              <div class="field span-12">
-                <label>Supporting Documents (upload multiple)</label>
-                <div class="upload-box">
-                  <input id="supportingDocs" type="file" multiple />
-                  <div class="file-note" id="supportingDocsNote">No supporting files selected.</div>
-                </div>
-              </div>
             </div>
 
             <div class="split" style="margin-top:18px">
@@ -857,10 +841,6 @@
 
             <div class="actions">
               <button class="btn btn-muted" id="backToStep3Btn">← Back</button>
-              <button class="btn btn-secondary" id="printPacketBtn">Print Packet</button>
-              <button class="btn btn-secondary" id="savePdfBtn">Save / PDF Print</button>
-              <button class="btn btn-secondary" id="downloadPackageBtn">Download PA Package</button>
-              <button class="btn btn-secondary" id="emailPacketBtn">Email Packet Draft</button>
               <button class="btn btn-secondary" id="freshRequestBtn">Start Fresh Request</button>
               <button class="btn" id="saveBtnLabel">Save PA Request</button>
             </div>
@@ -1189,101 +1169,6 @@
       $("imagingUploadNote").textContent = file ? `Selected: ${file.name}` : "No file selected.";
     }
 
-    function updateSupportingDocsNote(){
-      const files = Array.from($("supportingDocs").files || []);
-      $("supportingDocsNote").textContent = files.length ? `Selected: ${files.map(f => f.name).join(", ")}` : "No supporting files selected.";
-    }
-
-    function selectedFileNames(fileList){
-      return Array.from(fileList || []).map(file => file.name);
-    }
-
-    async function filesToPayload(fileList){
-      const files = Array.from(fileList || []);
-      return Promise.all(files.map(file => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = String(reader.result || "");
-          const base64 = result.includes(",") ? result.split(",", 2)[1] : result;
-          resolve({
-            filename: file.name,
-            content_type: file.type || "application/octet-stream",
-            data_base64: base64
-          });
-        };
-        reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
-        reader.readAsDataURL(file);
-      })));
-    }
-
-    async function buildPackageRequestPayload(){
-      const payload = casePayload();
-      if(state.lastAnalysis) payload.analysis = state.lastAnalysis;
-      if(state.lastPortalHelper) payload.portal_helper = state.lastPortalHelper;
-      if(state.lastLetter) payload.letter = state.lastLetter;
-      const supportingFiles = await filesToPayload($("supportingDocs").files);
-      const imagingFiles = await filesToPayload($("imagingUpload").files);
-      payload.uploaded_attachments = [...imagingFiles, ...supportingFiles];
-      return payload;
-    }
-
-    function buildEmailBodyFromPackage(pkg){
-      const patient = pkg?.patient?.name || "Patient";
-      const procedure = pkg?.request?.procedure || "Requested Procedure";
-      const payer = pkg?.patient?.payer || "Payer";
-      const steps = (pkg?.submission_steps || []).map(x => `- ${x}`).join("
-");
-      return [
-        `Please find the prior authorization packet for ${patient}.`,
-        "",
-        `Procedure: ${procedure}`,
-        `Payer: ${payer}`,
-        `Support Score: ${numericScoreValue(pkg?.analysis?.approval_score) ?? "N/A"}${pkg?.analysis?.approval_score !== undefined ? " / 100" : ""}`,
-        `Criteria Met: ${Number.isFinite(pkg?.analysis?.criteria_met) && Number.isFinite(pkg?.analysis?.criteria_total) ? `${pkg.analysis.criteria_met} / ${pkg.analysis.criteria_total}` : "N/A"}`,
-        `Missing Items: ${pkg?.analysis?.missing_count ?? ((pkg?.portal_helper?.missing || []).length)}`,
-        "",
-        "Submission notes:",
-        steps || "- Review attached packet and submit per payer workflow.",
-        "",
-        "Please attach the downloaded PA package ZIP or PDF before sending."
-      ].join("
-");
-    }
-
-    async function downloadPaPackage(){
-      const payload = await buildPackageRequestPayload();
-      const response = await fetch(`${API_BASE}/export-package`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
-      });
-      if(!response.ok){
-        throw new Error(`Export failed (${response.status})`);
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const fname = /filename="?([^";]+)"?/i.exec(response.headers.get("Content-Disposition") || "")?.[1] || "spinepa_package.zip";
-      a.href = url;
-      a.download = fname;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    async function emailPacketDraft(){
-      const payload = await buildPackageRequestPayload();
-      const pkg = await getJson("/build-package", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(payload)
-      });
-      const subject = `PA Packet - ${pkg?.patient?.name || "Patient"} - ${pkg?.request?.procedure || "Procedure"}`;
-      const body = buildEmailBodyFromPackage(pkg);
-      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    }
-
     function clearOutputs(){
       $("analysisOutput").textContent = "No analysis yet.";
       $("analysisSummaryProfessional").innerHTML = `<span class="muted">No analysis yet.</span>`;
@@ -1322,10 +1207,8 @@
       setMultiSelectByValues($("imagingFindings"), []);
       $("imagingSeverity").value = "";
       $("imagingUpload").value = "";
-      $("supportingDocs").value = "";
       $("imagingOther").value = "";
       updateUploadNote();
-      updateSupportingDocsNote();
       updateDiagnosisOptions("");
       updatePayerInfo();
       clearOutputs();
@@ -1357,9 +1240,7 @@
         notes: $("notes").value.trim(),
         conservative_treatment: buildConservativeTreatmentText(),
         imaging_summary: buildImagingSummaryText(),
-        clinical_note: $("notes").value.trim(),
-        uploaded_files: selectedFileNames($("supportingDocs").files),
-        imaging_file: selectedFileNames($("imagingUpload").files)
+        clinical_note: $("notes").value.trim()
       };
     }
 
@@ -1374,7 +1255,6 @@
       if(!payload.proc_type) missing.push("Procedure type");
       return missing;
     }
-
 
     function numericScoreValue(score){
       if(score === null || score === undefined || score === "") return null;
@@ -1400,29 +1280,47 @@
       return "blue";
     }
 
+    function countColorClass(count){
+      if(count === null || count === undefined || Number.isNaN(Number(count))) return "blue";
+      const value = Number(count);
+      if(value === 0) return "green";
+      if(value <= 2) return "yellow";
+      return "red";
+    }
+
     function renderProfessionalAnalysis(analysis, portalHelper){
       const likelihood = analysis?.approval_likelihood || "N/A";
       const rawScore = analysis?.approval_score;
       const score100 = numericScoreValue(rawScore);
       const scoreDisplay = score100 === null ? "N/A" : `${score100} / 100`;
-      const criteriaMet = analysis?.criteria_met;
-      const criteriaTotal = analysis?.criteria_total;
-      const missingCount = analysis?.missing_count ?? (portalHelper?.missing || []).length;
-      const criteriaDisplay = (Number.isFinite(criteriaMet) && Number.isFinite(criteriaTotal)) ? `${criteriaMet} / ${criteriaTotal}` : "N/A";
+      const criteriaMet = Number.isFinite(Number(analysis?.criteria_met)) ? Number(analysis.criteria_met) : null;
+      const criteriaTotal = Number.isFinite(Number(analysis?.criteria_total)) ? Number(analysis.criteria_total) : null;
+      const missingCount = Number.isFinite(Number(analysis?.missing_count)) ? Number(analysis.missing_count) : (Array.isArray(portalHelper?.missing) ? portalHelper.missing.length : null);
+
       const summary = analysis?.summary || "No summary returned.";
       const medNec = analysis?.medical_necessity || "No medical necessity summary returned.";
       const strengths = Array.isArray(analysis?.strengths) ? analysis.strengths : [];
       const missing = Array.isArray(portalHelper?.missing) ? portalHelper.missing : [];
       const docs = Array.isArray(portalHelper?.attachments) ? portalHelper.attachments : [];
       const steps = Array.isArray(portalHelper?.portal?.how_to_submit) ? portalHelper.portal.how_to_submit : [];
-      const denialReasons = Array.isArray(analysis?.denial_risk?.top_reasons) ? analysis.denial_risk.top_reasons : [];
+      const denialRiskReasons = Array.isArray(analysis?.denial_risk?.top_reasons) ? analysis.denial_risk.top_reasons : [];
 
       $("analysisSummaryProfessional").innerHTML = `
-        <div class="score-pill ${likelihoodColorClass(likelihood)}">Approval Likelihood: ${esc(likelihood)}</div>
-        <div class="score-pill ${scoreColorClass(rawScore)}">Support Score: ${esc(scoreDisplay)}</div>
-        <div class="score-pill blue">Criteria Met: ${esc(criteriaDisplay)}</div>
-        <div class="score-pill ${missingCount ? "yellow" : "green"}">Missing Items: ${esc(String(missingCount))}</div>
-        <div class="small-note">Support Score is displayed on a 0–100 scale, where higher scores indicate a stronger prior authorization packet.</div>
+        <div class="score-pill ${likelihoodColorClass(likelihood)}">
+          Approval Likelihood: ${esc(likelihood)}
+        </div>
+        <div class="score-pill ${scoreColorClass(rawScore)}">
+          Support Score: ${esc(scoreDisplay)}
+        </div>
+        <div class="score-pill ${criteriaMet !== null && criteriaTotal !== null ? scoreColorClass(criteriaTotal ? (criteriaMet / criteriaTotal) * 100 : null) : "blue"}">
+          Criteria Met: ${criteriaMet !== null && criteriaTotal !== null ? esc(`${criteriaMet} / ${criteriaTotal}`) : "N/A"}
+        </div>
+        <div class="score-pill ${countColorClass(missingCount)}">
+          Missing Items: ${missingCount === null ? "N/A" : esc(String(missingCount))}
+        </div>
+        <div class="small-note">
+          Support Score is displayed on a 0–100 scale, where higher scores indicate a stronger prior authorization packet.
+        </div>
 
         <div class="subcard blue">
           <strong>Executive Summary</strong>
@@ -1444,14 +1342,17 @@
         <div class="subcard ${missing.length ? "yellow" : "green"}">
           <strong>Gaps / Missing Elements</strong>
           <ul class="analysis-list">
-            ${(missing.length ? missing.map(item => `${item.element}${item.detail ? `: ${item.detail}` : ""}`) : ["No missing items listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+            ${(missing.length
+              ? missing.map(item => `${item.element}${item.detail ? `: ${item.detail}` : ""}`)
+              : ["No missing items listed."])
+              .map(x => `<li>${esc(x)}</li>`).join("")}
           </ul>
         </div>
 
-        <div class="subcard ${denialReasons.length ? "red" : "green"}">
+        <div class="subcard ${denialRiskReasons.length ? "red" : "green"}">
           <strong>Top Denial Risks</strong>
           <ul class="analysis-list">
-            ${(denialReasons.length ? denialReasons : ["No major denial risks listed."]).map(x => `<li>${esc(x)}</li>`).join("")}
+            ${(denialRiskReasons.length ? denialRiskReasons : ["No major denial risks highlighted."]).map(x => `<li>${esc(x)}</li>`).join("")}
           </ul>
         </div>
 
@@ -1472,71 +1373,40 @@
     }
 
     function renderAnalysisResult(analysis, portalHelper){
-      const missing = (portalHelper?.missing || []).map(item => `- ${item.element}${item.detail ? `: ${item.detail}` : ""}`).join("
-");
-      const docs = (portalHelper?.attachments || []).map(x => `- ${x}`).join("
-");
-      const steps = ((portalHelper?.portal || {}).how_to_submit || []).map(x => `- ${x}`).join("
-");
-      const strengths = (analysis?.strengths || []).map(x => `- ${x}`).join("
-");
-      const denialReasons = ((analysis?.denial_risk || {}).top_reasons || []).map(x => `- ${x}`).join("
-");
+      const missing = (portalHelper?.missing || []).map(item => `- ${item.element}${item.detail ? `: ${item.detail}` : ""}`).join("\n");
+      const docs = (portalHelper?.attachments || []).map(x => `- ${x}`).join("\n");
+      const steps = ((portalHelper?.portal || {}).how_to_submit || []).map(x => `- ${x}`).join("\n");
+      const strengths = (analysis?.strengths || []).map(x => `- ${x}`).join("\n");
+      const denialRisks = (analysis?.denial_risk?.top_reasons || []).map(x => `- ${x}`).join("\n");
+
       const rawScore = analysis?.approval_score;
       const score100 = numericScoreValue(rawScore);
       const scoreDisplay = score100 === null ? "N/A" : `${score100} / 100`;
-      const criteriaMet = analysis?.criteria_met;
-      const criteriaTotal = analysis?.criteria_total;
-      const criteriaDisplay = (Number.isFinite(criteriaMet) && Number.isFinite(criteriaTotal)) ? `${criteriaMet} / ${criteriaTotal}` : "N/A";
-      const missingCount = analysis?.missing_count ?? (portalHelper?.missing || []).length;
+      const criteriaDisplay = Number.isFinite(Number(analysis?.criteria_met)) && Number.isFinite(Number(analysis?.criteria_total))
+        ? `${Number(analysis.criteria_met)} / ${Number(analysis.criteria_total)}`
+        : "N/A";
+      const missingCount = Number.isFinite(Number(analysis?.missing_count))
+        ? String(Number(analysis.missing_count))
+        : String((portalHelper?.missing || []).length || "N/A");
 
       $("analysisOutput").textContent =
-        `PRIOR AUTHORIZATION READINESS REPORT
-` +
-        `=================================
-
-` +
-        `Approval likelihood: ${analysis?.approval_likelihood || "N/A"}
-` +
-        `Support score: ${scoreDisplay}
-` +
-        `Score scale: 0 to 100
-` +
-        `Criteria met: ${criteriaDisplay}
-` +
-        `Missing items: ${missingCount}
-
-` +
-        `Executive summary:
-${analysis?.summary || "No summary returned."}
-
-` +
-        `Medical necessity:
-${analysis?.medical_necessity || "No medical necessity summary returned."}
-
-` +
-        `Strengths:
-${strengths || "No strengths listed."}
-
-` +
-        `Top denial risks:
-${denialReasons || "No major denial risks listed."}
-
-` +
-        `Missing items:
-${missing || "None listed."}
-
-` +
-        `Required / recommended documents:
-${docs || "None listed."}
-
-` +
-        `Submission steps:
-${steps || "None listed."}`;
+        `PRIOR AUTHORIZATION READINESS REPORT\n` +
+        `=================================\n\n` +
+        `Approval likelihood: ${analysis?.approval_likelihood || "N/A"}\n` +
+        `Support score: ${scoreDisplay}\n` +
+        `Criteria met: ${criteriaDisplay}\n` +
+        `Missing items: ${missingCount}\n` +
+        `Score scale: 0 to 100\n\n` +
+        `Executive summary:\n${analysis?.summary || "No summary returned."}\n\n` +
+        `Medical necessity:\n${analysis?.medical_necessity || "No medical necessity summary returned."}\n\n` +
+        `Strengths:\n${strengths || "No strengths listed."}\n\n` +
+        `Missing items:\n${missing || "None listed."}\n\n` +
+        `Top denial risks:\n${denialRisks || "None listed."}\n\n` +
+        `Required / recommended documents:\n${docs || "None listed."}\n\n` +
+        `Submission steps:\n${steps || "None listed."}`;
 
       renderProfessionalAnalysis(analysis, portalHelper);
     }
-
 
     async function runAnalysis(){
       const payload = casePayload();
@@ -1587,7 +1457,6 @@ ${steps || "None listed."}`;
         <div class="kv"><strong>Duration:</strong> ${esc(payload.duration || "")}</div>
         <div class="kv"><strong>Conservative Treatment:</strong> <div style="margin-top:4px">${esc(payload.conservative_treatment || "")}</div></div>
         <div class="kv"><strong>Imaging Details:</strong> <div style="margin-top:4px">${esc(payload.imaging_summary || "")}</div></div>
-        <div class="kv"><strong>Selected Uploads:</strong> <div style="margin-top:4px">${esc([...(payload.imaging_file || []), ...(payload.uploaded_files || [])].join(", ") || "No files selected.")}</div></div>
       `;
 
       $("reviewPortal").innerHTML = payer ? `
@@ -1791,7 +1660,6 @@ ${steps || "None listed."}`;
       $("payerSelect").addEventListener("change", updatePayerInfo);
       $("providerSelect").addEventListener("change", updateProviderNpi);
       $("imagingUpload").addEventListener("change", updateUploadNote);
-    $("supportingDocs").addEventListener("change", updateSupportingDocsNote);
 
       $("toStep2Btn").addEventListener("click", () => {
         const missing = basicValidation();
@@ -1821,10 +1689,6 @@ ${steps || "None listed."}`;
 
       $("backToStep3Btn").addEventListener("click", () => setWizardStep(3));
       $("freshRequestBtn").addEventListener("click", startFreshRequest);
-    $("printPacketBtn").addEventListener("click", () => window.print());
-    $("savePdfBtn").addEventListener("click", () => window.print());
-    $("downloadPackageBtn").addEventListener("click", async () => { try { await downloadPaPackage(); } catch(err){ alert(`Package export failed: ${err.message}`); } });
-    $("emailPacketBtn").addEventListener("click", async () => { try { await emailPacketDraft(); } catch(err){ alert(`Email draft failed: ${err.message}`); } });
       $("saveBtnLabel").addEventListener("click", saveOrUpdateCase);
     }
 

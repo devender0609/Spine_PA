@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
 import sqlite3
 import sys
-import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -623,7 +621,6 @@ def normalize_case_payload(data: dict, config: dict | None = None) -> dict:
         "package_json": data.get("package_json") or data.get("packageJson") or {},
         "status": (data.get("status") or "submitted").strip() or "submitted",
         "storage_source": (data.get("storage_source") or data.get("storageSource") or "backend").strip() or "backend",
-        "uploaded_attachments": data.get("uploaded_attachments") or data.get("uploadedAttachments") or [],
     }
 
 
@@ -803,24 +800,6 @@ def build_package_payload(data: dict, config: dict) -> dict:
         "submission_steps": (helper.get("portal") or {}).get("how_to_submit", []),
         "portal": helper.get("portal") or {},
         "denial_risk": analysis.get("denial_risk") or {},
-        "email_draft": {
-            "subject": f"PA Packet - {normalized['patient'] or 'Patient'} - {structured['procedure']}",
-            "body": "\n".join([
-                f"Please find the prior authorization packet for {normalized['patient'] or 'the patient'}.",
-                "",
-                f"Procedure: {structured['procedure']}",
-                f"Payer: {normalized['payer']}",
-                f"Support Score: {analysis.get('approval_score', 'N/A')} / 100",
-                f"Criteria Met: {analysis.get('criteria_met', 'N/A')} / {analysis.get('criteria_total', 'N/A')}",
-                f"Missing Items: {analysis.get('missing_count', 0)}",
-                "",
-                "Submission steps:",
-                *[f"- {step}" for step in (helper.get('portal') or {}).get('how_to_submit', [])],
-                "",
-                "Please attach the downloaded PA package ZIP or PDF before sending.",
-            ]).strip(),
-        },
-        "uploaded_attachments": normalized.get("uploaded_attachments") or [],
     }
 
 
@@ -850,7 +829,6 @@ def row_to_case(row: sqlite3.Row) -> dict:
         "portalHelper": json.loads(row["portal_helper"] or "{}"),
         "packageJson": package_json,
         "letter": row["letter"],
-        "uploadedAttachments": package_json.get("uploaded_attachments", []),
         "status": row["status"],
         "storageSource": row["storage_source"] or "backend",
         "createdAt": row["created_at"],
@@ -1040,59 +1018,9 @@ def export_package():
     export_dir = Path("/tmp/spinepa_exports")
     export_dir.mkdir(parents=True, exist_ok=True)
     case_stub = slug(package["patient"].get("name", "case") or "case")[:40] or "CASE"
-    outfile = export_dir / f"{case_stub}_PA_PACKAGE.zip"
-
-    with zipfile.ZipFile(outfile, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("package.json", json.dumps(package, indent=2))
-        zf.writestr("pa_letter.txt", package.get("letter", ""))
-
-        analysis = package.get("analysis") or {}
-        analysis_text = "\n".join([
-            "PRIOR AUTHORIZATION READINESS REPORT",
-            "=================================",
-            f"Approval likelihood: {analysis.get('approval_likelihood', 'N/A')}",
-            f"Support score: {analysis.get('approval_score', 'N/A')} / 100",
-            f"Criteria met: {analysis.get('criteria_met', 'N/A')} / {analysis.get('criteria_total', 'N/A')}",
-            f"Missing items: {analysis.get('missing_count', 0)}",
-            "",
-            "Executive summary:",
-            analysis.get("summary", ""),
-            "",
-            "Medical necessity:",
-            analysis.get("medical_necessity", ""),
-            "",
-            "Top denial risks:",
-            *[f"- {item}" for item in (analysis.get("denial_risk") or {}).get("top_reasons", [])],
-        ]).strip() + "\n"
-        zf.writestr("analysis_report.txt", analysis_text)
-
-        zf.writestr(
-            "submission_checklist.txt",
-            "\n".join(f"- {x}" for x in package.get("submission_checklist", [])) + "\n",
-        )
-        zf.writestr(
-            "submission_steps.txt",
-            "\n".join(f"- {x}" for x in package.get("submission_steps", [])) + "\n",
-        )
-
-        email_draft = package.get("email_draft") or {}
-        zf.writestr(
-            "email_draft.txt",
-            f"Subject: {email_draft.get('subject', '')}\n\n{email_draft.get('body', '')}\n",
-        )
-
-        for item in package.get("uploaded_attachments", []) or []:
-            filename = Path(item.get("filename") or "attachment.bin").name
-            data_b64 = item.get("data_base64") or ""
-            if not data_b64:
-                continue
-            try:
-                raw = base64.b64decode(data_b64)
-            except Exception:
-                continue
-            zf.writestr(f"attachments/{filename}", raw)
-
-    return send_file(outfile, as_attachment=True, download_name=outfile.name, mimetype="application/zip")
+    outfile = export_dir / f"{case_stub}_PA_PACKAGE.json"
+    outfile.write_text(json.dumps(package, indent=2), encoding="utf-8")
+    return send_file(outfile, as_attachment=True, download_name=outfile.name, mimetype="application/json")
 
 
 @app.route("/cases", methods=["GET"])
